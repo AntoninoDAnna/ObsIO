@@ -1,0 +1,12 @@
+name = "ObsIO"
+uuid = "92b78e04-c3a5-4d37-b6f3-858be3158311"
+authors = ["nuccio "]
+version = "0.1.0"
+
+[deps]
+ADerrors = "5e92007d-7bf1-471c-8ceb-4591b8b567a9"
+BDIO = "375f315e-f2c4-11e9-2ef9-134f02f79e27"
+
+[compat]
+ADerrors = "0.1.0"
+BDIO = "0.1.0"
