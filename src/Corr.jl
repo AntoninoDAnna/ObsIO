@@ -1,4 +1,5 @@
-@enum Gamma Id G0 G1 G2 G3 G5 G0G1 G0G2 G0G3 G0G5 G1G2 G1G3 G1G5 G2G3 G2G5 G3G5   
+@enum Gamma Id G0 G1 G2 G3 G5 G0G1 G0G2 G0G3 G0G5 G1G2 G1G3 G1G5 G2G3 G2G5 G3G5 G0_d1 G1_d1 G2_d1 G3_d1 G5_d1 ID_d1 G0G1_d1 G0G2_d1 G0G3_d1 G0G5_d1 G1G2_d1 G1G3_d1 G1G5_d1 G2G3_d1 G2G5_d1 G3G5_d1 G0_d2 G1_d2 G2_d2 G3_d2 G5_d2 1_d2 G0G1_d2 G0G2_d2 G0G3_d2 G0G5_d2 G1G2_d2 G1G3_d2 G1G5_d2 G2G3_d2 G2G5_d2 G3G5_d2
+
 
 @doc """
      PointInfo
@@ -104,4 +105,22 @@ function show(io::IO,c::Corr)
     end
 end
 
+@doc"""
+        read_data(path;kwargs...)
 
+It read the data in `path` according to `kwargs`
+This function call the relevant function according to the extention of `path`
+
+
+"""
+function read_data(path; kwargs...)
+    if !isfile(path)
+        error("file $path does not exist")
+    end
+    b = basename(path)
+    if contais("mesons.dat", "")  == join(b[end-1:end],".")
+        return read_mesons(path;kwargs...)
+    else
+        error("This type of file is not supported")
+    end
+end
