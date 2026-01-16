@@ -1,110 +1,132 @@
-using EnumX
-@enumx NoiseType::Int32 begin
-    Z2 
-    GAUSS
-    U1
-    Z4
-end
-
-@enumx QuarkSmearing::Int32 begin
-    Local
-    Wuppertal
-    GradientFlow3D
-    GradientFlow
-end
-
-@enumx GluonicSmering::Int32 begin
-    Local
-    APE
-    WilsonFlow3D
-    Quark3DGradientFlow
-    QuarkGradientFlow
-end
-
-    
-struct GHeader
+struct GlobalHeader
     ncorr::Int32
     nnoise::Int32
     tvals::Int32
-    noise::NoiseType
-    headerSize::Int32
-    GHeader(a,b,c,d) = new(a,b,c,d,4*4)
-    function GHeader(x::Vector{Int32})
-        
-                     
-        
-    
-
+    noise::Noise.Type
+    hsize::Int32
+    GlobalHeader(a,b,c,d) = new(a,b,c,d,4*4)
+    GlobalHeader(x::Vector{Int32}) = new(x[1],x[2],x[3],Noise.Type(x[4]),4*4)
 end
 
-function read_GHeader(path::String)
+function read_GlobalHeader(path::String)
     data = open(path, "r")
     g_header = zeros(Int32, 4)
     read!(data, g_header)
     close(data)
-    a = GHeader(g_header)
+    a = GlobalHeader(g_header)
     return a
 end
 
-function read_CHeader(path::String; legacy::Bool=false)
-    gh = read_GHeader(path)
-    x
+mutable struct Smearing{T<:EnumClass}
+    type::T
+    niter::Int32
+    eps::Float64
+    Smearing(t::T) where {T<:EnumClass} = new{T}(t, 0, 0.0)
+    Smearing(t::T, n, e,) where {T<:EnumClass} = new{T}(t, n, e)
+end
+
+mutable struct CorrHeader
+    k::Vector{Float64}
+    mu::Vector{Float64}
+    dp::Vector{Float64}
+    theta::Vector{Vector{Float64}}
+    q::Vector{Smearing}
+    g::Vector{Smearing}
+    type::Vector{Gamma}
+    x0::Int32
+    is_real::Bool
+    hsize::Int32 #headersize
+    dsize::Int32 #datasize / (nnoise * T * ncfg)
+    function CorrHeader(aux_f::Vector{Float64}, aux_i::Vector{Int32}, theta::Vector{Float64}, sm_par::Vector{Smearing})
+        a = new()
+        a.k  = [aux_f[1],aux_f[2]]
+        a.mu = [aux_f[3],aux_f[4]]
+        a.dp = [aux_f[5],aux_f[6]]
+        a.type = Gamma.([aux_i[1],aux_i[2]])
+        a.x0 = aux_i[3]
+        a.is_real = aux_i[4]==1
+        a.theta = [theta[1:3],theta[4:6]]
+        a.q = sm_par[1:2]
+        a.g = sm_par[3:4]
+        a.hsize = 8*12 + 4*8 #without smearing parameters niter, neps
+        for q in a.q
+            q.type == QuarkSmearing.Local && continue;
+            a.hsize += 8+4
+        end
+        for g in a.g
+            if !(g.type == GluonicSmearing.APE || g.type == GluonicSmearing.WilsonFlow3D)
+                continue;
+            end
+            a.hsize += 8+4
+        end
+        a.dsize = a.is_real ? 8 : 16
+        return a
+    end
+    function CorrHeader(aux_f::Vector{Float64}, aux_i::Vector{Int32})
+        a = new()
+        a.k  = [aux_f[1],aux_f[2]]
+        a.mu = [aux_f[3],aux_f[4]]
+        a.dp = zeros(2)
+        a.type = Gamma.([aux_i[1],aux_i[2]])
+        a.x0 = aux_i[3]
+        a.is_real = aux_i[4]==1
+        a.theta= [zeros(3),zeros(3)]
+        a.hsize = 8*12 + 4*8 #without smearing parameters niter, neps
+        a.dsize = 16 - 8* a.is_real
+        return a
+    end
+end
+
+function read_CorrHeader(path::String; legacy::Bool=false)
+    gh = read_GlobalHeader(path)
     data = open(path, "r")
     seek(data, gh.hsize)
-    
-    a = Vector{CHeader}(undef, gh.ncorr)
+    a = Vector{CorrHeader}(undef, gh.ncorr)
     if !legacy
         aux_f = zeros(Float64, 6)
         aux_i = zeros(Int32, 4)
         theta = zeros(Float64, 6)
-
         for k = 1:gh.ncorr
             read!(data, aux_f)
             read!(data, theta)
-
-            qs1 = read(data, Int32)
-            if qs1 != 0
+            qs1 = read(data, Int32) |> QuarkSmearing.Type
+            if qs1 != QuarkSmearing.Local
                 qn1 = read(data, Int32)
                 qeps1 = read(data, Float64)
-                q1 = Sm(qs1, qn1, qeps1, 1)
+                q1 = Smearing(qs1, qn1, qeps1)
             else
-                q1 = Sm(qs1, 1)
+                q1 = Smearing(qs1)
             end
-
-            qs2 = read(data, Int32)
-            if qs2 != 0
+            qs2 = read(data, Int32)  |> QuarkSmearing.Type
+            if qs2 != QuarkSmearing.Local
                 qn2 = read(data, Int32)
                 qeps2 = read(data, Float64)
-                q2 = Sm(qs2, qn2, qeps2, 1)
+                q2 = Smearing(qs2, qn2, qeps2)
             else
-                q2 = Sm(qs2, 1)
+                q2 = Smearing(qs2)
             end
-
-
             gs1 = read(data, Int32)
             if gs1 != 0 && gs1 != 3 && gs1 != 4
                 gn1 = read(data, Int32)
                 geps1 = read(data, Float64)
-                g1 = Sm(gs1, gn1, geps1, 2)
+                g1 = Smearing(GluonicSmearing.Type(gs1), gn1, geps1)
             elseif gs1 == 3 || gs1 == 4
-                g1 = Sm(gs1, q1.niter, q1.eps, 2)
+                g1 = Smearing(GluonicSmearing.Type(gs1), q1.niter, q1.eps)
             else
-                g1 = Sm(gs1, 2)
+                g1 = Smearing(GluonicSmearing.Type(gs1))
             end
-            
             gs2 = read(data, Int32)
             if gs2 != 0 && gs2 != 3 && gs2 != 4
                 gn2 = read(data, Int32)
                 geps2 = read(data, Float64)
-                g2 = Sm(gs2, gn2, geps2, 2)
+                g2 = Smearing(GluonicSmearing.Type(gs2), gn2, geps2)
             elseif gs1 == 3 || gs1 == 4
-                g2 = Sm(gs2, q2.niter, q2.eps, 2)
+                g2 = Smearing(GluonicSmearing.Type(gs2), q2.niter, q2.eps)
             else
-                g2 = Sm(gs2, 2)
+                g2 = Smearing(GluonicSmearing.Type(gs2))
             end
-            
             read!(data, aux_i)
-            a[k] = CHeader(aux_f, aux_i, theta, [q1, q2, g1, g2])
+            a[k] = CorrHeader(aux_f, aux_i, theta, [q1, q2, g1, g2])
         end
     else
         aux_f = zeros(Float64, 4)
@@ -112,12 +134,23 @@ function read_CHeader(path::String; legacy::Bool=false)
         for k = 1:gh.ncorr
             read!(data, aux_f)
             read!(data, aux_i)
-            a[k] = CHeader(aux_f, aux_i)
+            a[k] = CorrHeader(aux_f, aux_i)
         end
     end
     close(data)
     return a
 end
+
+
+mutable struct CorrData
+    header::CorrHeader
+    vcfg::Array{Int32}
+    re_data::Array{Float64}
+    im_data::Array{Float64}
+    id::String
+    CorrData(a, b, c, d, e) = new(a, b, c, d, e)
+end
+
 
 @doc raw"""
     read_mesons(path::String, g1::Union{String, Nothing}=nothing, g2::Union{String, Nothing}=nothing; id::Union{String, Nothing}=nothing, legacy::Bool=false)
@@ -130,10 +163,6 @@ ADerrors id can be specified as argument. If is not specified, the `id` is fixed
 
 *For the old version (without smearing, distance preconditioning and theta) set legacy=true.
 
-For Julien's most updated inversion code, the sign of the valence derivatives is flipped. Note also that for the new dat files version, no `_d1, _d2` 
-is written by the reader, so you must select by hand (looking at the log files e.g.) which are you derivative correlators. In the log file, the 
-derivative correlators are signaled by `seq_prop=some number`.
-
 Examples:
 ```@example
 read_mesons(path)
@@ -141,24 +170,25 @@ read_mesons(path, "G5")
 read_mesons(path, nothing, "G5")
 read_mesons(path, "G5", "G5")
 read_mesons(path, "G5", "G5", id="H100")
-read_mesons(path, "G5_d2", "G5_d2", legacy=true)
+
 ```
-"""
-function read_mesons(path::String, g1::Union{String, Nothing}=nothing, g2::Union{String, Nothing}=nothing; id::Union{String, Nothing}=nothing, legacy::Bool=false,
-    nnoise_trunc::Union{Int64, Nothing}=nothing)    
-    t1 = isnothing(g1) ? nothing : findfirst(x-> x==g1, gamma_name) - 1
-    t2 = isnothing(g2) ? nothing : findfirst(x-> x==g2, gamma_name) - 1
+    """
+function read_mesons(path::String,
+                     g1::Gamma=None,
+                     g2::Gamma=None;
+                     id::Union{String, Nothing}=nothing,
+                     legacy::Bool=false,
+                     nnoise_trunc::Union{Int64, Nothing}=nothing)
+
     if isnothing(id)
         bname = basename(path)
         m = findfirst(r"[A-Z][0-9]{3}r[0-9]{3}", bname)
         id = bname[m[1:4]]
         #id = parse(Int64, bname[m[2:4]])
     end
-
     data = open(path, "r")
-    g_header = read_GHeader(path)
-    c_header = read_CHeader(path, legacy=legacy)
-
+    g_header = read_GlobalHeader(path)
+    c_header = read_CorrHeader(path, legacy=legacy)
     ncorr = g_header.ncorr
     tvals = g_header.tvals
     nnoise = g_header.nnoise
@@ -170,13 +200,10 @@ function read_mesons(path::String, g1::Union{String, Nothing}=nothing, g2::Union
     datsize = 4 + sum(getfield.(c_header, :dsize)) * tvals * nnoise #data_size / ncnfg
     ncfg = div(fsize - g_header.hsize - sum(getfield.(c_header, :hsize)), datsize) #(total size - header_size) / data_size
 
-    corr_match = findall(x-> (x.type1==t1 || isnothing(t1)) && (x.type2==t2 || isnothing(t2)), c_header)
-    #findall(x-> (x.mu1==0.2209), c_header)
-
-        
+    corr_match = findall(x-> (x.type[1]==g1 || g1==None) && (x.type[2]==g2 || g2==None),
+                         c_header)
     seek(data, g_header.hsize + sum(c.hsize for c in c_header))
-
-    res = Array{CData}(undef, length(corr_match))
+    res = Array{CorrData}(undef, length(corr_match))
 
     data_re = Array{Float64}(undef, length(corr_match), ncfg, tvals)
     data_im = zeros(length(corr_match), ncfg, tvals)
@@ -186,39 +213,36 @@ function read_mesons(path::String, g1::Union{String, Nothing}=nothing, g2::Union
         vcfg[icfg] = read(data, Int32)
         c=1
         for k = 1:ncorr
-            if k in corr_match 
-                if c_header[k].is_real == 1
-                    tmp = Array{Float64}(undef, tvals*nnoise)
-                    read!(data, tmp)
-                    tmp2 = reshape(tmp, (nnoise, tvals))
-                    tmp2 = mean(tmp2[1:nnoise_trunc, :], dims=1)
-                    data_re[c, icfg, :] = tmp2[1, :]
-                elseif c_header[k].is_real == 0
-                    tmp = Array{Float64}(undef, 2*tvals*nnoise)
-                    read!(data, tmp)
-                    tmp2 = reshape(tmp, (2, nnoise, tvals))
-                    tmp2 = mean(tmp2[:, 1:nnoise_trunc, :], dims=2)
-                    data_re[c, icfg, :] = tmp2[1, 1, :]
-                    data_im[c, icfg, :] = tmp2[2, 1, :]
-
-                end
-                c += 1
-            else
+            if !(k in corr_match)
                 seek(data, position(data)  + c_header[k].dsize*tvals*nnoise)
+                continue
             end
-        
-
+            if c_header[k].is_real
+                tmp = Array{Float64}(undef, tvals*nnoise)
+                read!(data, tmp)
+                tmp2 = reshape(tmp, (nnoise, tvals))
+                tmp2 = mean(tmp2[1:nnoise_trunc, :], dims=1)
+                data_re[c, icfg, :] = tmp2[1, :]
+            else
+                tmp = Array{Float64}(undef, 2*tvals*nnoise)
+                read!(data, tmp)
+                tmp2 = reshape(tmp, (2, nnoise, tvals))
+                tmp2 = mean(tmp2[:, 1:nnoise_trunc, :], dims=2)
+                data_re[c, icfg, :] = tmp2[1, 1, :]
+                data_im[c, icfg, :] = tmp2[2, 1, :]
+            end
+            c+=1
         end
     end
 
     for c in 1:length(corr_match)
-        res[c] = CData(c_header[corr_match[c]], vcfg, data_re[c, :, :], data_im[c, :, :], id)
+        res[c] = CorrData(c_header[corr_match[c]], vcfg, data_re[c, :, :], data_im[c, :, :], id)
     end
     close(data)
-
     return res
 end
 
+#=
 function read_mesons(path::Vector{String}, g1::Union{String, Nothing}=nothing, g2::Union{String, Nothing}=nothing; id::Union{String, Nothing}=nothing, legacy::Bool=false,
     nnoise_trunc::Union{Int64, Nothing}=nothing)
     res = read_mesons.(path, g1, g2, id=id, legacy=legacy, nnoise_trunc=nnoise_trunc)
@@ -227,7 +251,7 @@ function read_mesons(path::Vector{String}, g1::Union{String, Nothing}=nothing, g
 
     cdata = Vector{Vector{CData}}(undef, ncorr)
     for icorr = 1:ncorr
-        cdata[icorr] = Vector{CData}(undef, nrep) 
+        cdata[icorr] = Vector{CData}(undef, nrep)
         for r = 1:nrep
             cdata[icorr][r] = res[r][icorr]
         end
@@ -237,26 +261,26 @@ end
 
 @doc raw"""
     read_mesons(path::String, gamma::Vector{Tuple{String,String}}; id::Union{String, Nothing}=nothing, legacy::Bool=false,  nnoise_trunc::Union{Int64, Nothing}=nothing)
-    
+
     read_mesons(path::Vector{String}, gamma::Vector{Tuple{String,String}}; id::Union{String, Nothing}=nothing, legacy::Bool=false,  nnoise_trunc::Union{Int64, Nothing}=nothing)
 
 
 Read a meson.dat file and return a `Vector{Cdata}` with for different masses and the  Dirac structures specified in `gamma`.
-The Dirac structures are specified into `gamma` in a vector of Tuple as `(Gsrc,Gsnk)`. 
+The Dirac structures are specified into `gamma` in a vector of Tuple as `(Gsrc,Gsnk)`.
 
 This method is best used when muliple, but specific, Dirac structure are requested. It is up to the user reorganized the output in the preferred way.
 """
 function read_mesons(path::String, gamma::Vector{Tuple{String,String}}; id::Union{String, Nothing}=nothing, legacy::Bool=false,
-  nnoise_trunc::Union{Int64, Nothing}=nothing)    
-  
-  type = Vector{Tuple{Int64,Int64}}(undef,length(gamma)) 
-  
+  nnoise_trunc::Union{Int64, Nothing}=nothing)
+
+  type = Vector{Tuple{Int64,Int64}}(undef,length(gamma))
+
   for i in eachindex(gamma)
     G1,G2 = gamma[i]
     type[i] = (findfirst(x-> x==G1, juobs.gamma_name) - 1, findfirst(x-> x==G2, juobs.gamma_name) - 1)
   end
 
-     
+
   if isnothing(id)
       bname = basename(path)
       m = findfirst(r"[A-Z][0-9]{3}r[0-9]{3}", bname)
@@ -279,7 +303,7 @@ function read_mesons(path::String, gamma::Vector{Tuple{String,String}}; id::Unio
   ncfg = div(fsize - g_header.hsize - sum(getfield.(c_header, :hsize)), datsize) #(total size - header_size) / data_size
 
   corr_match = findall(x-> (x.type1,x.type2) in type, c_header)
-      
+
   seek(data, g_header.hsize + sum(c.hsize for c in c_header))
 
   res = Array{juobs.CData}(undef, length(corr_match))
@@ -292,7 +316,7 @@ function read_mesons(path::String, gamma::Vector{Tuple{String,String}}; id::Unio
       vcfg[icfg] = read(data, Int32)
       c=1
       for k = 1:ncorr
-          if k in corr_match 
+          if k in corr_match
               if c_header[k].is_real == 1
                   tmp = Array{Float64}(undef, tvals*nnoise)
                   read!(data, tmp)
@@ -312,18 +336,18 @@ function read_mesons(path::String, gamma::Vector{Tuple{String,String}}; id::Unio
           else
               seek(data, position(data)  + c_header[k].dsize*tvals*nnoise)
           end
-      
+
 
       end
   end
   ## sort by gamma_structure
   idx = Vector{Int64}(undef, length(corr_match))
-  is = 1 
+  is = 1
   for (G1,G2) in type
     aux = findall(x-> (x.type1 == G1 && x.type2==G2),c_header[corr_match])
     if isnothing(aux)
       continue;
-    end 
+    end
     l =length(aux);
     idx[is:is+l-1] = aux
     is += l;
@@ -346,7 +370,7 @@ function read_mesons(path::Vector{String}, gamma::Vector{Tuple{String,String}}; 
 
   cdata = Vector{Vector{juobs.CData}}(undef, ncorr)
   for icorr = 1:ncorr
-      cdata[icorr] = Vector{juobs.CData}(undef, nrep) 
+      cdata[icorr] = Vector{juobs.CData}(undef, nrep)
       for r = 1:nrep
           cdata[icorr][r] = res[r][icorr]
       end
@@ -384,7 +408,7 @@ function read_mesons_correction(path::String, g1::Union{String, Nothing}=nothing
 
     corr_match = findall(x-> (x.type1==t1 || isnothing(t1)) && (x.type2==t2 || isnothing(t2)), c_header)
 
-        
+
     seek(data, g_header.hsize + sum(c.hsize for c in c_header))
 
     res = Array{CData}(undef, div(length(corr_match), 2)) # Modification: total length is divided by 2
@@ -392,13 +416,13 @@ function read_mesons_correction(path::String, g1::Union{String, Nothing}=nothing
     data_re = zeros(div(length(corr_match), 2), ncfg, tvals) # Modification: total length is divided by 2
     data_im = zeros(div(length(corr_match), 2), ncfg, tvals) # Modification: total length is divided by 2
     vcfg = Array{Int32}(undef, ncfg)
-    
+
     for icfg = 1:ncfg
         vcfg[icfg] = read(data, Int32)
         c = 1
         sgn = +1 # sign it changes at ncorr / 2. O_exact - O_sloppy
         for k = 1:ncorr
-            if k in corr_match 
+            if k in corr_match
                 if c_header[k].is_real == 1
                     tmp = Array{Float64}(undef, tvals*nnoise)
                     read!(data, tmp)
@@ -430,7 +454,7 @@ function read_mesons_correction(path::String, g1::Union{String, Nothing}=nothing
     for c in 1:div(length(corr_match), 2)
     res[c] = juobs.CData(c_header[corr_match[c]], vcfg, data_re[c, :, :], data_im[c, :, :], id)
   end
-    
+
     close(data)
 
     return res
@@ -444,7 +468,7 @@ end
 
 
 Read a meson.dat file with correction data and return a `Vector{Cdata}` with for different masses and the  Dirac structures specified in `gamma`. (See also [`read_meson`](@ref))
-The Dirac structures are specified into `gamma` in a vector of Tuple as `(Gsrc,Gsnk)`. 
+The Dirac structures are specified into `gamma` in a vector of Tuple as `(Gsrc,Gsnk)`.
 
 This method is best used when muliple, but specific, Dirac structure are requested. It is up to the user reorganized the output in the preferred way.
 """
@@ -456,7 +480,7 @@ function read_mesons_correction(path::Vector{String}, g1::Union{String, Nothing}
 
     cdata = Vector{Vector{CData}}(undef, ncorr)
     for icorr = 1:ncorr
-        cdata[icorr] = Vector{CData}(undef, nrep) 
+        cdata[icorr] = Vector{CData}(undef, nrep)
         for r = 1:nrep
             cdata[icorr][r] = res[r][icorr]
         end
@@ -466,9 +490,9 @@ end
 
 function read_mesons_correction(path::String, gamma::Vector{Tuple{String,String}}; id::Union{String, Nothing}=nothing, legacy::Bool=false,
   nnoise_trunc::Union{Int64, Nothing}=nothing)
-  
-  type = Vector{Tuple{Int64,Int64}}(undef,length(gamma)) 
-  
+
+  type = Vector{Tuple{Int64,Int64}}(undef,length(gamma))
+
   for i in eachindex(gamma)
     G1,G2 = gamma[i]
     type[i] = (findfirst(x-> x==G1, juobs.gamma_name) - 1, findfirst(x-> x==G2, juobs.gamma_name) - 1)
@@ -498,7 +522,7 @@ function read_mesons_correction(path::String, gamma::Vector{Tuple{String,String}
 
   corr_match = findall(x-> (x.type1,x.type2) in type, c_header)
 
-      
+
   seek(data, g_header.hsize + sum(c.hsize for c in c_header))
 
   res = Array{juobs.CData}(undef, div(length(corr_match), 2)) # Modification: total length is divided by 2
@@ -506,13 +530,13 @@ function read_mesons_correction(path::String, gamma::Vector{Tuple{String,String}
   data_re = zeros(div(length(corr_match), 2), ncfg, tvals) # Modification: total length is divided by 2
   data_im = zeros(div(length(corr_match), 2), ncfg, tvals) # Modification: total length is divided by 2
   vcfg = Array{Int32}(undef, ncfg)
-  
+
   for icfg = 1:ncfg
       vcfg[icfg] = read(data, Int32)
       c = 1
       sgn = +1 # sign it changes at ncorr / 2. O_exact - O_sloppy
       for k = 1:ncorr
-          if k in corr_match 
+          if k in corr_match
               if c_header[k].is_real == 1
                   tmp = Array{Float64}(undef, tvals*nnoise)
                   read!(data, tmp)
@@ -555,7 +579,7 @@ ncorr = length(res[1])
 
 cdata = Vector{Vector{juobs.CData}}(undef, ncorr)
 for icorr = 1:ncorr
-    cdata[icorr] = Vector{juobs.CData}(undef, nrep) 
+    cdata[icorr] = Vector{juobs.CData}(undef, nrep)
     for r = 1:nrep
         cdata[icorr][r] = res[r][icorr]
     end
@@ -571,9 +595,9 @@ This function reads mesons dat files stored in chunks and returns a single vecto
   the paths to each chunks is given through the variable `paths::Vector{String}`
   Dirac structures `g1` and/or `g2` can be passed as string arguments in order to filter correlators.
   ADerrors id can be specified as argument. If is not specified, the `id` is fixed according to the ensemble name (example: "H400"-> id = "H400")
-  
+
   *For the old version (without smearing, distance preconditioning and theta) set legacy=true.
-  
+
   Examples:
   ```@example
   read_mesons([path_chunk1,path_chunk2,path_chunk3])
@@ -606,7 +630,7 @@ function read_rw(path::String; v::String="1.2")
         nfct = ones(Int32, nrw)
         nfct_inheader = 0
     else
-        error("Version not supported")  
+        error("Version not supported")
     end
     nsrc = Array{Int32}(undef, nrw)
     read!(data, nsrc)
@@ -617,7 +641,7 @@ function read_rw(path::String; v::String="1.2")
 
     ncnfg = Int32((fsize - glob_head_size)/datsize)
     r_data = Array{Array{Float64}}(undef, nrw)
-    
+
     [r_data[k] = zeros(Float64, nfct[k], nsrc[k], ncnfg) for k = 1:nrw]
     vcfg = Array{Int32}(undef, ncnfg)
     for icfg = 1:ncnfg
@@ -642,27 +666,27 @@ This function reads the reweighting factors generated with openQCD version 2.#.
 The flag print_info if set to true print additional information for debugging
 """
 function read_rw_openQCD2(path::String; print_info::Bool=false)
-    
+
     data = open(path, "r")
-    nrw = read(data, Int32) 
+    nrw = read(data, Int32)
     nrw = Int32(nrw / 2)
-    
+
     nfct = Array{Int32}(undef, nrw)
-    read!(data, nfct)       
-    
+    read!(data, nfct)
+
     nsrc = Array{Int32}(undef, nrw)
-    read!(data, nsrc)        
-    null = read(data, Int32)  
-    if null !== Int32(0)   
+    read!(data, nsrc)
+    null = read(data, Int32)
+    if null !== Int32(0)
         error("In openQCD 2.0 this Int32 should be a zero.")
     end
 
     data_array = Array{Array{Float64}}(undef, nrw)
     [data_array[k] = Array{Float64}(undef, 0) for k in 1:nrw]
-    vcfg = Vector{Int32}(undef, 0) 
+    vcfg = Vector{Int32}(undef, 0)
     while !eof(data)
 
-        push!(vcfg, read(data, Int32)) 
+        push!(vcfg, read(data, Int32))
         if print_info
             println("\n ######## cnfg: ", vcfg[end])
         end
@@ -684,13 +708,13 @@ end
 
 
 function read_array_rwf_dat_openQCD2(data::IOStream; print_info::Bool=false)
-    
-    d = read(data, Int32) 
+
+    d = read(data, Int32)
     n = Array{Int32}(undef, d)
-    read!(data, n)   
-    size = read(data, Int32) 
+    read!(data, n)
+    size = read(data, Int32)
     m = prod(n)
-    
+
     if print_info
         println("d: ", d)
         println("n: ", n)
@@ -711,18 +735,18 @@ function read_array_rwf_dat_openQCD2(data::IOStream; print_info::Bool=false)
     tmp_data = Array{types}(undef, m)
     read!(data, tmp_data)
 
-    res = parse_array_openQCD2(d, n, tmp_data, quadprec=true) 
+    res = parse_array_openQCD2(d, n, tmp_data, quadprec=true)
 
     return res, n
 end
 
 function parse_array_openQCD2(d, n, dat; quadprec=true)
-    
+
     if d != 2
         error("dat must be a two-dimensional array")
     end
     res = Vector{Vector{Float64}}(undef, 0)
-    
+
     for k in range(1,n[1])
         tmp = dat[(k-1)*n[2]+1:k*n[2]]
         if quadprec
@@ -747,7 +771,7 @@ Reads openQCD ms1 dat files at a given path. This method returns a matrix `W[irw
 The function is compatible with the output files of openQCD v=1.2, 1.4, 1.6 and 2.0. Version can be specified as argument.
 
 Examples:
-```@example    
+```@example
 read_ms1(path)
 read_ms1(path, v="1.4")
 read_ms1(path, v="1.6")
@@ -777,7 +801,7 @@ Reads openQCD  pbp.dat files at a given path. This method returns a matrix `md[i
 ``dSeff/ dm = -tr((D+m)^-1)``
 
 Examples:
-```@example    
+```@example
 md = read_md(path)
 ```
 """
@@ -791,10 +815,10 @@ function read_md(path::String)
 end
 
 @doc raw"""
-    read_ms(path::String; id::Union{String, Nothing}=nothing, dtr::Int64=1, obs::String="Y")  
+    read_ms(path::String; id::Union{String, Nothing}=nothing, dtr::Int64=1, obs::String="Y")
 
-Reads openQCD ms dat files at a given path. This method return YData: 
-    
+Reads openQCD ms dat files at a given path. This method return YData:
+
 - `t(t)`: flow time values
 
 - `obs(icfg, x0, t)`: the time-slice sums of the densities of the observable (Wsl, Ysl or Qsl)
@@ -807,17 +831,17 @@ Reads openQCD ms dat files at a given path. This method return YData:
 is the same but applied to the ms.dat file.
 
 Examples:
-```@example    
+```@example
 Y = read_ms(path)
 ```
 """
-function read_ms(path::String; id::Union{String, Nothing}=nothing, dtr::Int64=1 , obs::String="Y")  
+function read_ms(path::String; id::Union{String, Nothing}=nothing, dtr::Int64=1 , obs::String="Y")
     if isnothing(id)
         bname = basename(path)
         m = findfirst(r"[A-Z][0-9]{3}r[0-9]{3}", bname)
         id = bname[m[1:4]]
         #id = parse(Int64, bname[m[2:4]])
-    end  
+    end
     data = open(path, "r")
 
     dn = read(data, Int32)
@@ -837,9 +861,9 @@ function read_ms(path::String; id::Union{String, Nothing}=nothing, dtr::Int64=1 
     end
 
     vntr = Vector{Int32}(undef, div(ntr, dtr))
-    
-    # x0, t, cfg 
-    Wsl = Array{Float64}(undef, div(ntr, dtr), tvals, nn + 1) 
+
+    # x0, t, cfg
+    Wsl = Array{Float64}(undef, div(ntr, dtr), tvals, nn + 1)
     Ysl = Array{Float64}(undef, div(ntr, dtr), tvals, nn + 1)
     Qsl = Array{Float64}(undef, div(ntr, dtr), tvals, nn + 1)
 
@@ -869,7 +893,7 @@ function read_ms(path::String; id::Union{String, Nothing}=nothing, dtr::Int64=1 
     end
     close(data)
     t = Float64.(0:nn) .* dn .* eps
-    
+
     if obs == "W"
         return YData(vntr, t, Wsl, id)
     elseif obs == "Y"
@@ -894,7 +918,7 @@ end
 Truncates the output of `read_mesons` and `read_ms` taking the first `nc` configurations.
 
 Examples:
-```@example    
+```@example
 #Single replica
 dat = read_mesons(path, "G5", "G5")
 Y = read_ms(path)
@@ -945,13 +969,13 @@ end
 
     concat_data!(data1::Vector{Vector{CData}}, data2::Vector{Vector{CData}})
 
-Concatenates the output of 2 calls to `read_mesons` over configurations. 
-Both data must have the same number of replicas and correlators. 
-The output is saved in the first argument, so if you want to concatenate 
+Concatenates the output of 2 calls to `read_mesons` over configurations.
+Both data must have the same number of replicas and correlators.
+The output is saved in the first argument, so if you want to concatenate
 3 data sets: `concat_data!(data1, data2); concat_data!(data1, data3)`
 
 Examples:
-```@example    
+```@example
 #Single replica
 dat = read_mesons(path, "G5", "G5")
 dat2 = read_mesons(path2, "G5", "G5")
@@ -965,7 +989,7 @@ concat_data!(dat, dat2)
 """
 function concat_data!(data1::Vector{juobs.CData}, data2::Vector{juobs.CData})
     N = length(data1)
-    if length(data1) != length(data2) 
+    if length(data1) != length(data2)
         error("number of correlators do not match")
     end
     for k = 1:N
@@ -974,15 +998,15 @@ function concat_data!(data1::Vector{juobs.CData}, data2::Vector{juobs.CData})
         data1[k].im_data = vcat(data1[k].im_data, data2[k].im_data)
         idx = sortperm(data1[k].vcfg)
         data1[k].vcfg = data1[k].vcfg[idx]
-        data1[k].re_data = data1[k].re_data[idx, :] 
-        data1[k].im_data = data1[k].im_data[idx, :] 
+        data1[k].re_data = data1[k].re_data[idx, :]
+        data1[k].im_data = data1[k].im_data[idx, :]
     end
     return nothing
 end
 
 function concat_data!(data1::Vector{Vector{juobs.CData}}, data2::Vector{Vector{juobs.CData}})
     N = length(data1)
-    if length(data1) != length(data2) 
+    if length(data1) != length(data2)
         error("number of correlators do not match")
     end
     R = length(data1[1])
@@ -996,8 +1020,8 @@ function concat_data!(data1::Vector{Vector{juobs.CData}}, data2::Vector{Vector{j
             data1[k][r].im_data = vcat(data1[k][r].im_data, data2[k][r].im_data)
             idx = sortperm(data1[k][r].vcfg)
             data1[k][r].vcfg = data1[k][r].vcfg[idx]
-            data1[k][r].re_data = data1[k][r].re_data[idx, :] 
-            data1[k][r].im_data = data1[k][r].im_data[idx, :] 
+            data1[k][r].re_data = data1[k][r].re_data[idx, :]
+            data1[k][r].im_data = data1[k][r].im_data[idx, :]
 
         end
     end
@@ -1008,7 +1032,7 @@ function get_YM(path::String, ens::EnsInfo; rw=false, ws::ADerrors.wspace=ADerro
 
     path_ms = joinpath(path, ens.id, "gf")
     path_ms = filter(x->occursin(".dat", x), readdir(path_ms, join=true))
-    Y = read_ms.(path_ms, dtr=ens.dtr) 
+    Y = read_ms.(path_ms, dtr=ens.dtr)
 
     nr = length(Y)
     Ysl = getfield.(Y, :obs)
@@ -1044,7 +1068,7 @@ function get_YM(path::String, ens::EnsInfo; rw=false, ws::ADerrors.wspace=ADerro
             replica = size.(Ysl, 1)
         end
     end
-    
+
     tmp = Ysl[1]
     [tmp = cat(tmp, Ysl[k], dims=1) for k = 2:nr]
     xmax = size(tmp, 2)
@@ -1111,7 +1135,7 @@ function get_YM_dYM(path::String, ens::EnsInfo; rw=false, ws::ADerrors.wspace=AD
 
     path_ms = joinpath(path, ens.id, "gf")
     path_ms = filter(x->occursin(".dat", x), readdir(path_ms, join=true))
-    Y = read_ms.(path_ms, dtr=ens.dtr) 
+    Y = read_ms.(path_ms, dtr=ens.dtr)
 
     truncate_data!(Y, ens.cnfg)
 
@@ -1149,7 +1173,7 @@ function get_YM_dYM(path::String, ens::EnsInfo; rw=false, ws::ADerrors.wspace=AD
             replica = size.(Ysl, 1)
         end
     end
-    
+
     tmp = Ysl[1]
     [tmp = cat(tmp, Ysl[k], dims=1) for k = 2:nr]
     xmax = size(tmp, 2)
@@ -1242,31 +1266,31 @@ function read_mesons_multichunks(path::String, ens::String, g1::String="G5", g2:
     #=
     if ens == "E300"
         for i in 1:length(idx_ts001)-1
-            concat_data!(store_cdata_aux[idx_ts001[1]][1:2:end], store_cdata_aux[idx_ts001[i+1]])    
+            concat_data!(store_cdata_aux[idx_ts001[1]][1:2:end], store_cdata_aux[idx_ts001[i+1]])
         end
-        concat_data!(store_cdata_aux[idx_tsT[1]], store_cdata_aux[idx_ts001[1]][2:2:end]) 
+        concat_data!(store_cdata_aux[idx_tsT[1]], store_cdata_aux[idx_ts001[1]][2:2:end])
         for i in 1:length(idx_tsT)-1
-            concat_data!(store_cdata_aux[idx_tsT[1]], store_cdata_aux[idx_tsT[i+1]])    
+            concat_data!(store_cdata_aux[idx_tsT[1]], store_cdata_aux[idx_tsT[i+1]])
         end
         store_cdata_aux[idx_ts001[1]] = store_cdata_aux[idx_ts001[1]][1:2:end]
     else
         for i in 1:length(idx_ts001)-1
-            concat_data!(store_cdata_aux[idx_ts001[1]], store_cdata_aux[idx_ts001[i+1]])    
+            concat_data!(store_cdata_aux[idx_ts001[1]], store_cdata_aux[idx_ts001[i+1]])
         end
         for i in 1:length(idx_tsT)-1
-            concat_data!(store_cdata_aux[idx_tsT[1]], store_cdata_aux[idx_tsT[i+1]])    
+            concat_data!(store_cdata_aux[idx_tsT[1]], store_cdata_aux[idx_tsT[i+1]])
         end
     end
     =#
     for i in 1:length(idx_ts001)-1
-        concat_data!(store_cdata_aux[idx_ts001[1]], store_cdata_aux[idx_ts001[i+1]])    
+        concat_data!(store_cdata_aux[idx_ts001[1]], store_cdata_aux[idx_ts001[i+1]])
     end
     for i in 1:length(idx_tsT)-1
-        concat_data!(store_cdata_aux[idx_tsT[1]], store_cdata_aux[idx_tsT[i+1]])    
+        concat_data!(store_cdata_aux[idx_tsT[1]], store_cdata_aux[idx_tsT[i+1]])
     end
     dat_ts001 = store_cdata_aux[idx_ts001[1]]
     dat_ts190 = store_cdata_aux[idx_tsT[1]]
-    
+
     dat = Vector{Vector{juobs.CData}}()
     for i in 1:length(dat_ts001)
         push!(dat, dat_ts001[i])
@@ -1288,10 +1312,10 @@ function read_mesons_correction_multichunks(path::String, ens::String, g1::Strin
     end
 
     for i in 1:length(idx_ts001)-1
-        concat_data!(store_cdata_aux[idx_ts001[1]], store_cdata_aux[idx_ts001[i+1]])    
+        concat_data!(store_cdata_aux[idx_ts001[1]], store_cdata_aux[idx_ts001[i+1]])
     end
     for i in 1:length(idx_tsT)-1
-        concat_data!(store_cdata_aux[idx_tsT[1]], store_cdata_aux[idx_tsT[i+1]])    
+        concat_data!(store_cdata_aux[idx_tsT[1]], store_cdata_aux[idx_tsT[i+1]])
     end
     dat_ts001 = store_cdata_aux[idx_ts001[1]]
     if length(idx_tsT) >= 1
@@ -1318,7 +1342,7 @@ function get_corr_TSM_multichunks(path::String, ens::EnsInfo; info=false)
         path_rw = joinpath(path, "rwf")
         global path_rw = filter(x->occursin(".dat", x), readdir(path_rw, join=true))
     end
-    
+
     pp_dat = read_mesons_multichunks(path_sl, ens.id, "G5", "G5")
     ap_dat = read_mesons_multichunks(path_sl, ens.id, "G5", "G0G5")
     pp_dat_c = read_mesons_correction_multichunks(path_c, ens.id, "G5", "G5")
@@ -1334,7 +1358,7 @@ function get_corr_TSM_multichunks(path::String, ens::EnsInfo; info=false)
     truncate_data!(ap_dat[1:2:end], cnfg_trunc_ts001)
     truncate_data!(pp_dat_c[1:2:end], cnfg_trunc_ts001_c)
     truncate_data!(ap_dat_c[1:2:end], cnfg_trunc_ts001_c)
-    truncate_data!(pp_dat[2:2:end], cnfg_trunc_ts190) 
+    truncate_data!(pp_dat[2:2:end], cnfg_trunc_ts190)
     truncate_data!(ap_dat[2:2:end], cnfg_trunc_ts190)
     truncate_data!(pp_dat_c[2:2:end], cnfg_trunc_ts190_c)
     truncate_data!(ap_dat_c[2:2:end], cnfg_trunc_ts190_c)
@@ -1342,7 +1366,7 @@ function get_corr_TSM_multichunks(path::String, ens::EnsInfo; info=false)
     if sym_bool[ens.id] == true
         pp = corr_obs_TSM.(pp_dat[1:length(ap_dat_c)], pp_dat_c[1:length(ap_dat_c)], rw=rwf, L=ens.L, info=info, replica_sl=ens.cnfg, nms=sum(ens.cnfg))
         ap = corr_obs_TSM.(ap_dat[1:length(ap_dat_c)], ap_dat_c[1:length(ap_dat_c)], rw=rwf, L=ens.L, info=info, replica_sl=ens.cnfg, nms=sum(ens.cnfg))
-    
+
         if ens.id == "E250"
             pp_sym = [corr_sym_E250(pp[i], pp[i+1], +1) for i in 1:2:length(ap)]
             ap_sym = [corr_sym_E250(ap[i], ap[i+1], -1) for i in 1:2:length(ap)]
@@ -1358,7 +1382,7 @@ function get_corr_TSM_multichunks(path::String, ens::EnsInfo; info=false)
         ap_ts001 = corr_obs_TSM.(ap_dat[1:2:length(ap_dat)], ap_dat_c[1:length(ap_dat_c)], rw=rwf, L=ens.L, info=info, replica_sl=ens.cnfg, nms=sum(ens.cnfg))
         pp_tsT = corr_obs.(pp_dat[2:2:length(ap_dat)], rw=rwf, L=ens.L, info=info, replica=ens.cnfg, nms=sum(ens.cnfg))
         ap_tsT = corr_obs.(ap_dat[2:2:length(ap_dat)], rw=rwf, L=ens.L, info=info, replica=ens.cnfg, nms=sum(ens.cnfg))
-    
+
         if ens.id == "E250"
             pp_sym = [corr_sym_E250(pp_ts001[i], pp_tsT[i], +1) for i in 1:length(pp_ts001)]
             ap_sym = [corr_sym_E250(ap_ts001[i], ap_tsT[i], -1) for i in 1:length(pp_ts001)]
@@ -1370,7 +1394,7 @@ function get_corr_TSM_multichunks(path::String, ens::EnsInfo; info=false)
             ap_sym = [corr_sym(ap_ts001[i], ap_tsT[i], -1) for i in 1:length(pp_ts001)]
         end
     end
-    
+
     return pp_sym, ap_sym
 end
 
@@ -1581,25 +1605,25 @@ function read_ens_csv(ens::EnsInfo)
     path2_ss_sym = Path2_ss_sym[ix]
 
     pp_ll = [csv2Corr(path_ll[i], ens_cnfg[ens.id], trunc=ens.cnfg, id=ens.id) for i in 1:length(path_ll)]
-	pp_ls = [csv2Corr(path_ls[i], ens_cnfg[ens.id], trunc=ens.cnfg, id=ens.id) for i in 1:length(path_ls)]
+        pp_ls = [csv2Corr(path_ls[i], ens_cnfg[ens.id], trunc=ens.cnfg, id=ens.id) for i in 1:length(path_ls)]
     pp_ss = [csv2Corr(path_ss[i], ens_cnfg[ens.id], trunc=ens.cnfg, id=ens.id) for i in 1:length(path_ss)]
-    ap_ll = [csv2Corr(path2_ll[i], ens_cnfg[ens.id], trunc=ens.cnfg, id=ens.id) for i in 1:length(path2_ll)] 
-	ap_ls = [csv2Corr(path2_ls[i], ens_cnfg[ens.id], trunc=ens.cnfg, id=ens.id) for i in 1:length(path2_ls)] 
+    ap_ll = [csv2Corr(path2_ll[i], ens_cnfg[ens.id], trunc=ens.cnfg, id=ens.id) for i in 1:length(path2_ll)]
+        ap_ls = [csv2Corr(path2_ls[i], ens_cnfg[ens.id], trunc=ens.cnfg, id=ens.id) for i in 1:length(path2_ls)]
     ap_ss = [csv2Corr(path2_ss[i], ens_cnfg[ens.id], trunc=ens.cnfg, id=ens.id) for i in 1:length(path2_ss)]
 
-    pp_ll_2 = [csv2Corr(path_ll_sym[i], ens_cnfg[ens.id], trunc=ens.cnfg, id=ens.id) for i in 1:length(path_ll_sym)] 
-	pp_ls_2 = [csv2Corr(path_ls_sym[i], ens_cnfg[ens.id], trunc=ens.cnfg, id=ens.id) for i in 1:length(path_ls_sym)]
+    pp_ll_2 = [csv2Corr(path_ll_sym[i], ens_cnfg[ens.id], trunc=ens.cnfg, id=ens.id) for i in 1:length(path_ll_sym)]
+        pp_ls_2 = [csv2Corr(path_ls_sym[i], ens_cnfg[ens.id], trunc=ens.cnfg, id=ens.id) for i in 1:length(path_ls_sym)]
     pp_ss_2 = [csv2Corr(path_ss_sym[i], ens_cnfg[ens.id], trunc=ens.cnfg, id=ens.id) for i in 1:length(path_ss_sym)]
-    ap_ll_2 = [csv2Corr(path2_ll_sym[i], ens_cnfg[ens.id], trunc=ens.cnfg, id=ens.id) for i in 1:length(path2_ll_sym)] 
-	ap_ls_2 = [csv2Corr(path2_ls_sym[i], ens_cnfg[ens.id], trunc=ens.cnfg, id=ens.id) for i in 1:length(path2_ls_sym)]
-	ap_ss_2 = [csv2Corr(path2_ss_sym[i], ens_cnfg[ens.id], trunc=ens.cnfg, id=ens.id) for i in 1:length(path2_ss_sym)]
+    ap_ll_2 = [csv2Corr(path2_ll_sym[i], ens_cnfg[ens.id], trunc=ens.cnfg, id=ens.id) for i in 1:length(path2_ll_sym)]
+        ap_ls_2 = [csv2Corr(path2_ls_sym[i], ens_cnfg[ens.id], trunc=ens.cnfg, id=ens.id) for i in 1:length(path2_ls_sym)]
+        ap_ss_2 = [csv2Corr(path2_ss_sym[i], ens_cnfg[ens.id], trunc=ens.cnfg, id=ens.id) for i in 1:length(path2_ss_sym)]
 
-	pp_ll_sym = [corr_sym(pp_ll[i],pp_ll_2[i],+1) for i in 1:1:length(pp_ll)]
-	pp_ls_sym = [corr_sym(pp_ls[i],pp_ls_2[i],+1) for i in 1:1:length(pp_ls)]
-	ap_ll_sym = [corr_sym(ap_ll[i],ap_ll_2[i],-1) for i in 1:1:length(ap_ll)]
-	ap_ls_sym = [corr_sym(ap_ls[i],ap_ls_2[i],-1) for i in 1:1:length(ap_ls)]
-	pp_ss_sym = [corr_sym(pp_ss[i],pp_ss_2[i],+1) for i in 1:1:length(pp_ss)]
-	ap_ss_sym = [corr_sym(ap_ss[i],ap_ss_2[i],-1) for i in 1:1:length(ap_ss)]
+        pp_ll_sym = [corr_sym(pp_ll[i],pp_ll_2[i],+1) for i in 1:1:length(pp_ll)]
+        pp_ls_sym = [corr_sym(pp_ls[i],pp_ls_2[i],+1) for i in 1:1:length(pp_ls)]
+        ap_ll_sym = [corr_sym(ap_ll[i],ap_ll_2[i],-1) for i in 1:1:length(ap_ll)]
+        ap_ls_sym = [corr_sym(ap_ls[i],ap_ls_2[i],-1) for i in 1:1:length(ap_ls)]
+        pp_ss_sym = [corr_sym(pp_ss[i],pp_ss_2[i],+1) for i in 1:1:length(pp_ss)]
+        ap_ss_sym = [corr_sym(ap_ss[i],ap_ss_2[i],-1) for i in 1:1:length(ap_ss)]
 
     i=j=1
     pp_sym = Array{juobs.Corr,1}()
@@ -1613,3 +1637,4 @@ function read_ens_csv(ens::EnsInfo)
 
     return pp_sym, ap_sym, [pp_ll;pp_ls;pp_ss;pp_ll_2;pp_ls_2;pp_ss_2], [ap_ll;ap_ls;ap_ss;ap_ll_2;ap_ls_2;ap_ss_2]
 end
+=#

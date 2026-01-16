@@ -1,65 +1,63 @@
-@enum Gamma Id G0 G1 G2 G3 G5 G0G1 G0G2 G0G3 G0G5 G1G2 G1G3 G1G5 G2G3 G2G5 G3G5 G0_d1 G1_d1 G2_d1 G3_d1 G5_d1 ID_d1 G0G1_d1 G0G2_d1 G0G3_d1 G0G5_d1 G1G2_d1 G1G3_d1 G1G5_d1 G2G3_d1 G2G5_d1 G3G5_d1 G0_d2 G1_d2 G2_d2 G3_d2 G5_d2 1_d2 G0G1_d2 G0G2_d2 G0G3_d2 G0G5_d2 G1G2_d2 G1G3_d2 G1G5_d2 G2G3_d2 G2G5_d2 G3G5_d2
-
-
 @doc """
-     PointInfo
+     Point
 
 Store the information of a point in a correlator
 
 # Fields
 - `gamma::Gamma`: gamma structure at the point. See also [`Gamma`](@ref)
-- `x0::Union{Int64,Missing}`: Time position in lattice units. If `missing` then is the moving point 
+- `x0::Union{Int64,Missing}`: Time position in lattice units. If `missing` then is the moving point
 """
-struct PointInfo
+struct Point
     gamma::Gamma
     x0::Union{Int64,Missing}
+    qsmearing::QuarkSmearing.Type
+    gsmearing::GluonicSmearing.Type
+    Point() = new(None,-1,None,None)
+    Point(g,x,qs,gs) = new(g,x,qs,gs)
+    Point(x::Base.Generator) =new(x...)
+end
+
+function update(p::Point;k...)
+    isempty(k) && (return p)
+    return Point(get(k,s,getfield(p,s)) for s in fieldnames(Point))
 end
 
 struct Propagator
-    m::Float64
+    k::Float64
     mu::Float64
-    theta::AbstractVector{Float64}
-    pF::AbstractVector{Int64}
-    src::Int64; # index to the PointInfo in "insertion"
-    snk::Int64; # if 0-> source of the propagator, if -1 sink of the propagator
+    theta::NTuple{3,Float64}
+    pF::NTuple{4,Int64}
+    src::Int64
+    snk::Int64
+    Propagator() = new(0.,0.,(0.,0.,0),(0,0,0,0),-1,-1)
+    Propagator(k,m,t,p,src,snk) = new(k,m,t,p,src,snk)
+    Propagator(x::Base.Generator) = new(x...)
+end
+
+function update(p::Propagator;k...)
+    isempty(k) && (return p)
+    return Propagator(get(k,s,getfield(p,s)) for s in fieldnames(Propagator))
 end
 
 abstract type AbstractCorr end
 
-mutable struct Corr <: AbstractCorr
+struct Corr{N} <: AbstractCorr
     obs::AbstractVector
-    src::PointInfo
-    snk::PointInfo
-    insertions::AbstractVector{PointInfo}
-    propagators::AbstractVector{Propagator}
-    L::Union{Int64,AbstractVector{Int64}} # spatial lenght in lattice units. if only 1 int is given, the lattice volume is L^3, otherwise V = L[1]*L[2]*L[3]
-    T::Int64  # Lattice time extent.
-    N::Int64 # number of point in the correlator
-    function Corr(obs,gammas, xs, ms, mus, thetas,pFs,L)
-        N = length(gammas)
-        if any(N .!= length.((xs,ms,mus,thetas,pFs,)))
-            error("[Corr] Incompatible fields. gammas, xs,ms, mus, thetas and pFs must have the same number of elements")
-        end
-        src = PointInfo(gammas[1],xs[1])
-        snk = PointInfo(gammas[end],xs[end])
-        insertions = N == 2 ? PointInfo[] : Vector{PointInfo}(undef,N-2)
-        propagators = Vector{Propagator}(undef, N)
-        propagators[1] = Propagator(ms[1],mus[1],thetas[1],pFs[1],0, N>2 ? 1 : -1)
-        for i in 2:N-1
-            xsrc = i-1
-            xsnk = i==N-1 ? -1 : i
-            propagators[i] = Propagator(ms[i],mus[i],thetas[i],pFs[i],xsrc,xsnk)
-            insertions[i-1] = PointInfo(gammas[i+1],xs[i])
-        end
-        propagators[end] = Propagator(ms[end],mus[end],thetas[end],pFs[end],-1,0)
-        T = length(obs)
-        return new(obs,src,snk,insertions,propagators,L,T,N)
-    end   
+    points::NTuple{N,Point}
+    propagators::NTuple{N,Propagator}
+    Corr(o,po,pr) = new{N}(o,po,pr)
+    Corr() = new{N}([],ntuple(x->Point(),N),ntuple(x->Propagator(),N))
+    Corr(x::Base.Generator) = new{N}(x...)
+end
+
+function update(c::Corr{N} where N; k...)
+    isempty(k) && (return c)
+    return Corr(get(k,s,getfield(c,s)) for s in fieldnames(Corr{N}))
 end
 
 import Base:show
 
-function show_customized_PointInfo(io::IO, p::PointInfo;tab="")
+function show_customized_Point(io::IO, p::Point;tab="")
     println(io,tab,"gamma: ",p.gamma)
     println(io,tab,"x0:    ",ismissing(p.x0) ? "varying" : p.x0)
 end
@@ -74,8 +72,8 @@ function show_customized_propagator(io::IO, p::Propagator,label::Vector{<:Abstra
         else
             return label[x]
         end
-    end    
-    println(io,tab,"(m,mu): (",p.m," ",p.mu,")")
+    end
+    println(io,tab,"(k,mu): (",p.k," ",p.mu,")")
     println(io,tab,"pF:     [",join(string.(p.pF),", "),"]")
     println(io,tab,"theta:  [",join(string.(p.theta),", "),"]")
     println(io,tab,"propagate from ", f(p.src)," to ",f(p.snk))
@@ -89,15 +87,15 @@ function show(io::IO,c::Corr)
         println(io,"Lattice size = $(c.L[1])*$(c.L[2])*$(c.L[3])*$(c.T)")
     end
     println("source: ")
-    show_customized_PointInfo(io,c.src,tab="   ");
+    show_customized_Point(io,c.src,tab="   ");
     if (N!=2)
         for (i,p) in pairs(c.insertions)
             println("$(i) insertion point:")
-            show_customized_PointInfo(io,p,tab="    ")
+            show_customized_Point(io,p,tab="    ")
         end
     end
     println("sink:")
-    show_customized_PointInfo(io,c.snk,tab="    ")
+    show_customized_Point(io,c.snk,tab="    ")
     label = ["$(i) insersition point" for i in 1:N-2]
     for (i,p) in pairs(c.propagators)
         println("propagator $(i):")
@@ -105,12 +103,18 @@ function show(io::IO,c::Corr)
     end
 end
 
+function show(io::IO,p::Point)
+    print(io,"gamma = ", p.gamma, ",\tx0 = ", p.x0)
+    print(io,",\tquark smering = ",p.qsmearing,",\tgluonic smearing = ",p.gsmearing)
+end
+
+show(io::IO,p::Propagator) = show_customized_propagator(io,p,["",""])
+
 @doc"""
         read_data(path;kwargs...)
 
 It read the data in `path` according to `kwargs`
 This function call the relevant function according to the extention of `path`
-
 
 """
 function read_data(path; kwargs...)
