@@ -1,8 +1,8 @@
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.11.6"
+julia_version = "1.11.2"
 manifest_format = "2.0"
-project_hash = "54df0bb2e63e978d9892b19b7a20b58cf9b7863e"
+project_hash = "f28bbcb8141939bf8bccb2e5b48e6d1e3e84c1af"
 
 [[deps.ADerrors]]
 deps = ["BDIO", "FFTW", "FastGaussQuadrature", "ForwardDiff", "LaTeXStrings", "LinearAlgebra", "Nettle", "PGFPlotsX", "Plots", "Printf", "QuadGK", "Roots", "Statistics", "Test", "UnicodePlots"]
@@ -11,6 +11,14 @@ repo-rev = "master"
 repo-url = "https://igit.ific.uv.es/alramos/aderrors.jl.git"
 uuid = "5e92007d-7bf1-471c-8ceb-4591b8b567a9"
 version = "0.1.0"
+
+[[deps.ALPHAio]]
+deps = ["ADerrors", "ArgParse", "BDIO", "FromFile", "TOML"]
+git-tree-sha1 = "ef2b76ec5650bab78cba39314b9b31ebf7d2d1b2"
+repo-rev = "main"
+repo-url = "https://igit.ific.uv.es/alramos/alphaio.git"
+uuid = "256c8f1b-2b55-4cde-b445-e5743814c2ab"
+version = "0.4.0"
 
 [[deps.ANSIColoredPrinters]]
 git-tree-sha1 = "574baf8110975760d391c710b6341da1afa48d8c"
@@ -70,6 +78,12 @@ version = "1.1.3"
 git-tree-sha1 = "f9e9a66c9b7be1ad7372bbd9b062d9230c30c5ce"
 uuid = "dce04be8-c92d-5529-be00-80e4d2c0e197"
 version = "2.5.0"
+
+[[deps.ArgParse]]
+deps = ["Logging", "TextWrap"]
+git-tree-sha1 = "22cf435ac22956a7b45b0168abbc871176e7eecc"
+uuid = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
+version = "1.2.0"
 
 [[deps.ArgTools]]
 uuid = "0dad84c5-d112-42e6-8d28-ef12dabb789f"
@@ -364,6 +378,12 @@ deps = ["Artifacts", "JLLWrappers", "Libdl"]
 git-tree-sha1 = "7a214fdac5ed5f59a22c2d9a885a16da1c74bbc7"
 uuid = "559328eb-81f9-559d-9380-de523a88c83c"
 version = "1.0.17+0"
+
+[[deps.FromFile]]
+deps = ["Downloads", "Requires"]
+git-tree-sha1 = "fd1b6f327472d0faf28b4d1fda8d9b582ab136df"
+uuid = "ff7dd447-1dcb-4ce3-b8ac-22a812192de7"
+version = "0.1.6"
 
 [[deps.GLFW_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Libglvnd_jll", "Xorg_libXcursor_jll", "Xorg_libXi_jll", "Xorg_libXinerama_jll", "Xorg_libXrandr_jll", "libdecor_jll", "xkbcommon_jll"]
@@ -761,7 +781,7 @@ version = "0.3.27+1"
 [[deps.OpenLibm_jll]]
 deps = ["Artifacts", "Libdl"]
 uuid = "05823500-19ac-5b8b-9628-191a04bc5112"
-version = "0.8.5+0"
+version = "0.8.1+2"
 
 [[deps.OpenSSH_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "OpenSSL_jll", "Zlib_jll"]
@@ -1165,6 +1185,11 @@ version = "0.1.1"
 deps = ["InteractiveUtils", "Logging", "Random", "Serialization"]
 uuid = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 version = "1.11.0"
+
+[[deps.TextWrap]]
+git-tree-sha1 = "43044b737fa70bc12f6105061d3da38f881a3e3c"
+uuid = "b718987f-49a8-5099-9789-dcd902bef87d"
+version = "1.0.2"
 
 [[deps.TranscodingStreams]]
 git-tree-sha1 = "0c45878dcfdcfa8480052b6ab162cdd138781742"
