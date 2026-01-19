@@ -14,7 +14,7 @@ function read_propagator(file)
     kappa, mu = 0.0, 0.0
     pF = ntuple(x->0.0,Val(4))
     theta = ntuple(x->0.0,Val(3))
-    seq_prop = -1
+    seq_prop = false
     seq_type = None
     seq_x0 = -1
     flag::UInt8 = 0x0
@@ -39,22 +39,65 @@ function read_propagator(file)
             seq_prop=extract_first(r"[0-9]+",line,Int64)
         elseif contains(line, "seq_type")
             seq_type = extract_first(r"(G[0-5]){1,2}",line,Gamma)
-        elseif contains("mom",line)
+        elseif contains(line,"mom")
             pF = extract_all(r"[0-9]+",line,Int64)
-            println(pF)
-        elseif contains("seq_x0",line)
-            seq_x0 = extract_first(r"[0-9]+",line,Int64)
+        elseif contains(line,"seq_x0")
+            seq_x0 = extract_first(r"(?<=\s)[0-9]+",line,Int64)
         elseif  !isnothing(match(r"(?<=\[)([^\]]+)",line))
             error("Overflowed Propagator section")
         end
     end
-    prop = Propagator(kappa,mu,theta,pF,-1,-1)
     src  = Point(seq_type,seq_x0,QuarkSmearing.Local,GluonicSmearing.Local)
     snk  = Point(None,missing, QuarkSmearing.Local,GluonicSmearing.Local)
-    return prop, src, snk
+    prop = Propagator(kappa,mu,theta,pF,src,snk,seq_prop)
+    return prop
 end
 
-function read_correlator(file,props,points)
+function resolve_seq_prop(p1::Propagator,p2::Propagator,
+                          props::Vector{Propagator})
+    res_props = (p1,p2)
+    if isa(p1.seq_prop, Int64)
+        idx = p1.seq_prop +1
+        update(p1,seq_prop = true)
+        seq_props = resolve_seq_prop(props[idx],p2,props)
+        res_props = (p1,seq_prop...)
+    elseif isa(p2.seq_prop,Int64)
+        idx = p2.seq_prop +1
+        update(p2,seq_prop = true)
+        seq_prop = resolve_seq_prop(p1,props[idx],props)
+        res_props = (seq_prop...,p2)
+    end
+        return res_props
+end
+
+function update_propagators_tuple(props::NTuple{2,Propagator},
+                                  x0, types,qsmear,gsmear)
+    p1,p2 = props
+    p1 = update(p1,src = update(p1.src,x0=x0, qsmearing = qsmear[1],
+                                gsmearing = gsmear[1],gamma = types[1]),
+                snk = update(p1.snk,x0=missing, qsmearing = qsmear[2],
+                             gsmearing = gsmear[2],gamma = types[2]))
+    p2 = update(p2,src = p1.snk)
+    p2 = update(p2,snk = p1.src)
+    return (p1,p2)
+end
+
+function update_propagators_tuple(props::NTuple{3,Propagator},
+                                  x0, types,qsmear,gsmear)
+    p1,p2,p3 = props # p3 is the sequential propagator
+
+    p1 = update(p1,src = update(p1.src,x0=x0,qsmearing=qsmear[1],
+                                gsmearing = gsmear[1],gamma = types[1]),
+                snk = update(p1.snk,x0=missing,qsmearing=qsmear[2],
+                             gsmearing = gsmear[2],gamma = types[2]))
+    p2 = update(p2,src = p1.src)
+    p2 = update(p2,snk = p3.src)
+    p3 = update(p3,snk = p1.snk)
+    return (p1,p2,p3)
+end
+
+
+function read_correlator(file,props)
     iprop = (0.,0.)
     type = nothing
     gsmear = (0,0)
@@ -72,7 +115,7 @@ function read_correlator(file,props,points)
             iprop = extract_all(r"[0-9]+",line,Int64) |>
                 x->(x[1]+1,x[2]+1)
         elseif contains(line,"type")
-            type = extract_all(r"(G[0-5]){1,2}",line, Gamma)
+            type = extract_all(r"(G[0-5]){1,2}|(1)",line, Gamma)
         elseif contains(line,"gsmear")
             gsmear = extract_all(r"[0-9]+",line,Int32) |>
                 x->GluonicSmearing.Type.(x)
@@ -80,15 +123,13 @@ function read_correlator(file,props,points)
             qsmear = extract_all(r"[0-9]+",line,Int32) |>
                 x->QuarkSmearing.Type.(x)
         elseif contains(line,"x0")
-            x0 = extract_first(r"[0-9]+",line,Int64)
+            x0 = extract_first(r"(?<=\s)[0-9]+",line,Int64)
         end
     end
-    Pr1 = update(props[iprop[1]], src=1)
-    src = points[2iprop[1]-1]
-    snk = points[2iprop[1]]
-
+    props = resolve_seq_prop(props[iprop[1]],props[iprop[2]],props)
+    props = update_propagators_tuple(props, x0,type,qsmear,gsmear)
+    return Corr([],props)
 end
-
 function read_measurements(file)
     nprop,ncorr = 0,0
     flag::UInt8 = 0x0
@@ -109,11 +150,9 @@ function read_measurements(file)
     return nprop,ncorr
 end
 
-
 function read_input_file(path)
     file = open(path,"r")
     props =nothing;
-    points=nothing;
     corrs =nothing;
     while !eof(file)
         head = match(r"(?<=\[)([^\]]+)",readline(file))
@@ -121,16 +160,15 @@ function read_input_file(path)
         if contains(head.match,"Measurements")
             nprop,ncorr = read_measurements(file)
             props = Vector{Propagator}(undef, nprop)
-            points = Vector{Point}(undef,2nprop)
             corrs = Vector{Corr}(undef,ncorr)
         elseif contains(head.match,"Propagator")
             idx = match(r"[0-9]+",head.match) |> x->parse(Int64,x.match) + 1
-            props[idx], points[2idx-1], points[2idx] = read_propagator(file)
+            props[idx] = read_propagator(file)
         elseif contains(head.match,"Correlator")
             idx = match(r"[0-9]+",head.match)|> x->parse(Int64,x.match) + 1
-            read_correlator(file,props,points)
+            corrs[idx] = read_correlator(file,props)
         end
     end
     close(file)
-   # return props, points
+    return corrs
 end

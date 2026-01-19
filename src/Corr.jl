@@ -27,10 +27,11 @@ struct Propagator
     mu::Float64
     theta::NTuple{3,Float64}
     pF::NTuple{4,Int64}
-    src::Int64
-    snk::Int64
-    Propagator() = new(0.,0.,(0.,0.,0),(0,0,0,0),-1,-1)
-    Propagator(k,m,t,p,src,snk) = new(k,m,t,p,src,snk)
+    src::Point
+    snk::Point
+    seq_prop::Union{Int64,Bool}
+    Propagator() = new(0.,0.,(0.,0.,0),(0,0,0,0),Point(),Point(),-1)
+    Propagator(k,m,t,p,src,snk,seq_prop=false) = new(k,m,t,p,src,snk,seq_prop)
     Propagator(x::Base.Generator) = new(x...)
 end
 
@@ -45,8 +46,16 @@ struct Corr{N} <: AbstractCorr
     obs::AbstractVector
     points::NTuple{N,Point}
     propagators::NTuple{N,Propagator}
-    Corr(o,po,pr) = new{N}(o,po,pr)
-    Corr() = new{N}([],ntuple(x->Point(),N),ntuple(x->Propagator(),N))
+    function Corr(o,pr::NTuple{N,Propagator}) where N
+        pts = (pr[1].src,)
+        for i in 1:N-1
+            pts = (pts..., pr[i].snk)
+        end
+        return new{N}(o,pts,pr)
+    end
+    Corr(o,po::NTuple{N,Point},pr::NTuple{N,Propagator}) where N=
+        new{N}(o,po,pr)
+    Corr(N::Int64) = new{N}([],ntuple(x->Point(),N),ntuple(x->Propagator(),N))
     Corr(x::Base.Generator) = new{N}(x...)
 end
 
@@ -57,49 +66,25 @@ end
 
 import Base:show
 
-function show_customized_Point(io::IO, p::Point;tab="")
-    println(io,tab,"gamma: ",p.gamma)
-    println(io,tab,"x0:    ",ismissing(p.x0) ? "varying" : p.x0)
-end
-
 function show_customized_propagator(io::IO, p::Propagator,label::Vector{<:AbstractString};tab="")
-    function f(x)
-        if x ==0
-            return "source"
-        end
-        if x==-1
-            return "sink"
-        else
-            return label[x]
-        end
-    end
-    println(io,tab,"(k,mu): (",p.k," ",p.mu,")")
-    println(io,tab,"pF:     [",join(string.(p.pF),", "),"]")
-    println(io,tab,"theta:  [",join(string.(p.theta),", "),"]")
-    println(io,tab,"propagate from ", f(p.src)," to ",f(p.snk))
+    print(io,tab,"(k,mu): (",p.k," ",p.mu,")")
+    print(io,tab,"pF:     [",join(string.(p.pF),", "),"]")
+    print(io,tab,"theta:  [",join(string.(p.theta),", "),"]")
+    print(io,tab,"propagate from ", f(p.src)," to ",f(p.snk))
 end
 
-function show(io::IO,c::Corr)
-    println(io,"$(c.N)-point correlator:")
-    if c.L isa Int64
-        println(io,"Lattice size = $(c.L)^3*$(c.T)")
-    else
-        println(io,"Lattice size = $(c.L[1])*$(c.L[2])*$(c.L[3])*$(c.T)")
+function show(io::IO,c::Corr{N} where N)
+    N = length(c.points)
+    println(io, "$(N)-point correlator")
+    println(io,"Points:")
+    for p in c.points
+        println(io,"\t",p,)
+        println(io,"-"^80)
     end
-    println("source: ")
-    show_customized_Point(io,c.src,tab="   ");
-    if (N!=2)
-        for (i,p) in pairs(c.insertions)
-            println("$(i) insertion point:")
-            show_customized_Point(io,p,tab="    ")
-        end
-    end
-    println("sink:")
-    show_customized_Point(io,c.snk,tab="    ")
-    label = ["$(i) insersition point" for i in 1:N-2]
-    for (i,p) in pairs(c.propagators)
-        println("propagator $(i):")
-        show_customized_propagator(io,p,label,tab="    ")
+    println(io,"\n","Propagators:")
+    for p in c.propagators
+        println(io, "\t", p)
+        println(io,"-"^80)
     end
 end
 
@@ -108,7 +93,20 @@ function show(io::IO,p::Point)
     print(io,",\tquark smering = ",p.qsmearing,",\tgluonic smearing = ",p.gsmearing)
 end
 
-show(io::IO,p::Propagator) = show_customized_propagator(io,p,["",""])
+function show(io::IO,p::Propagator)
+    print(io, "kappa = ", p.k," ")
+    print(io, "mu = ", p.mu, " ")
+    print(io, "pF = ", p.pF, " ")
+    println(io, "theta = ",p.theta," ")
+    if isa(p.seq_prop, Bool) && p.seq_prop
+        println(io, "It's a sequential propagator")
+    elseif isa(p.seq_prop,Int64)
+        println(io, "It's a sequential propagator starting from propagator ",
+                p.seq_prop)
+    end
+    println(io, "source: \n", p.src)
+    println(io, "sink: \n", p.snk)
+end
 
 @doc"""
         read_data(path;kwargs...)
