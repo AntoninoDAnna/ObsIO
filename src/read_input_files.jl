@@ -172,3 +172,17 @@ function read_input_file(path)
     close(file)
     return corrs
 end
+
+function read_input_file(path,gsrc::Gamma, gsnk::Gamma)
+    corrs = read_input_file(path)
+    gsrc != None && filter!(x->x.points[1].gamma ==gsrc, corrs)
+    gsrc != None && filter!(x->x.points[2].gamma==gsnk,corrs)
+    return corrs
+end
+
+"No Gamma::None allowed in here"
+function read_input_file(path,gamma::NTuple{2,Gamma}...)
+    corrs = read_input_file(path)
+    filter!(x->(x.points[1].gamma,x.points[2].gamma) in gamma,corrs)
+    return corrs
+end
