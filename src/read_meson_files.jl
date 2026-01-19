@@ -1,3 +1,4 @@
+using Statistics, ADerrors
 struct GlobalHeader
     ncorr::Int32
     nnoise::Int32
@@ -23,6 +24,20 @@ mutable struct Smearing{T<:EnumClass}
     eps::Float64
     Smearing(t::T) where {T<:EnumClass} = new{T}(t, 0, 0.0)
     Smearing(t::T, n, e,) where {T<:EnumClass} = new{T}(t, n, e)
+end
+
+import Base: show
+function Base.show(io::IO, s::Smearing)
+    ST = typeof(s.type)
+    if isa(s.type,QuarkSmearing.Type) && s.type == QuarkSmearing.Local
+        print(io,"Quark Smering: ",s.type)
+    elseif isa(s.type,QuarkSmearing.Type)
+        print(io,"Quark Smering: ",s.type,", niter: ",s.niter,", eps: ",s.eps)
+    elseif isa(s.type,GluonicSmearing.Type) && s.type == GluonicSmearing.Local
+        print(io,"Gluonic Smering: ",s.type)
+    elseif isa(s.type,GluonicSmearing.Type)
+        print(io,"Gluonic Smering: ",s.type,", niter: ",s.niter,", eps: ",s.eps)
+    end
 end
 
 mutable struct CorrHeader
@@ -75,6 +90,17 @@ mutable struct CorrHeader
         a.dsize = 16 - 8* a.is_real
         return a
     end
+end
+
+function Base.show(io::IO, c::CorrHeader)
+    println(io,"kappa: ",c.k,". ")
+    println(io,"mu: ",c.mu,". ")
+    println(io,"dp: ", c.dp,". ")
+    println(io,"theta: ",c.theta[1],", ",c.theta[2],". ")
+    println(io,c.q[1],", ",c.q[2],", ")
+    println(io,c.g[1],", ",c.g[2],", ")
+    println(io,"type: ",c.type,", ")
+    print(io,"source: ", c.x0,", ")
 end
 
 function read_CorrHeader(path::String; legacy::Bool=false)
@@ -148,9 +174,16 @@ mutable struct CorrData
     re_data::Array{Float64}
     im_data::Array{Float64}
     id::String
-    CorrData(a, b, c, d, e) = new(a, b, c, d, e)
+    corr::Corr
+    CorrData(a, b, c, d, e,f) = new(a, b, c, d, e,f)
 end
 
+function show(io::IO, c::CorrData)
+    println(io, "Correlator data. Ensemble ",c.id)
+    println(io, "Configuration length ", c.vcfg)
+    println(io, c.header)
+    println(io, c.corr)
+end
 
 @doc raw"""
     read_mesons(path::String, g1::Union{String, Nothing}=nothing, g2::Union{String, Nothing}=nothing; id::Union{String, Nothing}=nothing, legacy::Bool=false)
@@ -176,6 +209,7 @@ read_mesons(path, "G5", "G5", id="H100")
 function read_mesons(path::String,
                      g1::Gamma=None,
                      g2::Gamma=None;
+                     input_path::String,
                      id::Union{String, Nothing}=nothing,
                      legacy::Bool=false,
                      nnoise_trunc::Union{Int64, Nothing}=nothing)
@@ -189,6 +223,7 @@ function read_mesons(path::String,
     data = open(path, "r")
     g_header = read_GlobalHeader(path)
     c_header = read_CorrHeader(path, legacy=legacy)
+    corrs = read_input_file(input_path)
     ncorr = g_header.ncorr
     tvals = g_header.tvals
     nnoise = g_header.nnoise
@@ -236,13 +271,130 @@ function read_mesons(path::String,
     end
 
     for c in 1:length(corr_match)
-        res[c] = CorrData(c_header[corr_match[c]], vcfg, data_re[c, :, :], data_im[c, :, :], id)
+        res[c] = CorrData(c_header[corr_match[c]], vcfg, data_re[c, :, :], data_im[c, :, :], id,corrs[corr_match[c]])
     end
     close(data)
     return res
 end
 
-#=
+function apply_rw(data::Array{Float64}, W::Matrix{Float64}, vcfg::Union{Nothing, Vector{Int32}}=nothing; id::Union{String, Nothing}=nothing, fs::Bool=false)
+    nc = size(W,2)
+    if isnothing(vcfg)
+        vcfg = collect(1:nc)
+    end
+
+    if fs == false
+        if id == "A653"
+            rw1 = W[1, 1:nc]
+            rw = rw1
+            data_r = data .* rw[vcfg]
+            return (data_r, rw)
+        else
+            rw1 = W[1, 1:nc]
+            rw2 = W[2, 1:nc]
+            rw = rw1 .* rw2
+            data_r = data .* rw[vcfg]
+            return (data_r, rw)
+        end
+    else
+        rw1 = W[1, 1:nc]
+        rw2 = W[2, 1:nc]
+        rw_s = [1.0 for i in 1:nc]
+        if id in ["H105r001", "H105r002", "H105r005", "J303", "J303r003"]
+            rw_s[flag_s[id]] .= -1.0
+        end
+        rw = rw1 .* rw2 .* rw_s
+        data_r = data .* rw[vcfg]
+        return (data_r, rw)
+    end
+end
+
+function apply_rw(data::Vector{<:Array{Float64}}, W::Vector{Matrix{Float64}}, vcfg::Union{Nothing, Vector{Vector{Int32}}}=nothing; id::Union{String, Nothing}=nothing, fs::Bool=false)
+    nc = size.(W, 2)
+    if isnothing(vcfg)
+        vcfg = [collect(1:nc[k]) for k=1:length(nc)]
+    end
+
+    if fs == false
+        if id == "A653"
+            rw1 = [W[k][1, 1:nc[k]] for k=1:length(W)]
+            rw = [rw1[k] for k =1:length(W)]
+            data_r = [data[k] .* rw[k][vcfg[k]] for k=1:length(data)]
+            return (data_r, rw)
+        else
+            rw1 = [W[k][1, 1:nc[k]] for k=1:length(W)]
+            rw2 = [W[k][2, 1:nc[k]] for k=1:length(W)]
+            rw = [rw1[k] .* rw2[k] for k =1:length(W)]
+            data_r = [data[k] .* rw[k][vcfg[k]] for k=1:length(data)]
+            return (data_r, rw)
+        end
+    else
+        rw1 = [W[k][1, 1:nc[k]] for k=1:length(W)]
+        rw2 = [W[k][2, 1:nc[k]] for k=1:length(W)]
+        rw_s = [[1.0 for i in 1:nc[k]] for k=1:length(W)]
+        if id == "H105"
+            rw_s[1][flag_s["H105r001"]] .= -1.0
+            rw_s[2][flag_s["H105r002"]] .= -1.0
+        elseif id == "H105r005"
+            rw_s[1][flag_s["H105r005"]] .= -1.0
+        elseif id == "J303" || id == "J303r003"
+            rw_s[1][flag_s["J303r003"]] .= -1.0
+        end
+        rw = [rw1[k] .* rw2[k] .* rw_s[k] for k =1:length(W)]
+        data_r = [data[k] .* rw[k][vcfg[k]] for k=1:length(data)]
+        return (data_r, rw)
+    end
+end
+
+function corr_obs(cdata::Array{CorrData, 1};
+                  real::Bool=true,
+                  rw::Union{Array{Array{Float64, 2}, 1}, Nothing}=nothing,
+                  L::Int64=1, info::Bool=false,
+                  replica::Union{Vector{Int64},Nothing}=nothing,
+                  idm::Union{Vector{Int64},Nothing}=nothing,
+                  nms::Union{Int64, Nothing}=nothing,
+                  flag_strange::Bool=false)
+    nr = length(cdata)
+    id = getfield.(cdata, :id)
+    vcfg = getfield.(cdata, :vcfg)
+    replica = isnothing(replica) ? Int64.(maximum.(vcfg)) : replica
+    nms = isnothing(nms) ?  sum(replica) : nms
+    nr = length(vcfg)
+    if isnothing(idm)
+        a = vcfg[1]
+        for i in 2:nr
+            a = [a; a[end] .+ vcfg[i]]
+        end
+        idm = Int64.(a)
+    end
+    if !all(id .== id[1])
+        error("IDs are not equal")
+    end
+    data = real ? getfield.(cdata, :re_data) ./ L^3 :  getfield.(cdata, :im_data) ./ L^3
+    nt = size(data[1])[2]
+    if isnothing(rw)
+        tmp = data[1]
+        [tmp = cat(tmp, data[k], dims=1) for k = 2:nr]
+        obs = [uwreal(tmp[:, x0], id[1], replica, idm, nms) for x0 = 1:nt]
+    else
+        data_r, W = apply_rw(data, rw, vcfg, id=id[1], fs=flag_strange)
+        tmp = data_r[1]
+        tmp_W = W[1]
+        [tmp = cat(tmp, data_r[k], dims=1) for k = 2:nr]
+        [tmp_W = cat(tmp_W, W[k], dims=1) for k = 2:nr]
+        ow = [uwreal(tmp[:, x0], id[1], replica, idm, nms) for x0 = 1:nt]
+        W_obs = uwreal(tmp_W, id[1], replica, idm, nms)
+        obs = [ow[x0] / W_obs for x0 = 1:nt]
+    end
+    corr = update(cdata[1].corr, obs = obs)
+    if info
+        return isnothing(rw) ? (corr, obs) : (corr, ow,W_obs)
+    else
+        return corr
+    end
+end
+
+    #=
 function read_mesons(path::Vector{String}, g1::Union{String, Nothing}=nothing, g2::Union{String, Nothing}=nothing; id::Union{String, Nothing}=nothing, legacy::Bool=false,
     nnoise_trunc::Union{Int64, Nothing}=nothing)
     res = read_mesons.(path, g1, g2, id=id, legacy=legacy, nnoise_trunc=nnoise_trunc)

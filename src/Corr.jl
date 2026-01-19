@@ -12,7 +12,7 @@ struct Point
     x0::Union{Int64,Missing}
     qsmearing::QuarkSmearing.Type
     gsmearing::GluonicSmearing.Type
-    Point() = new(None,-1,None,None)
+    Point() = new(None,-1,QuarkSmearing.None,GluonicSmearing.None)
     Point(g,x,qs,gs) = new(g,x,qs,gs)
     Point(x::Base.Generator) =new(x...)
 end
@@ -56,12 +56,12 @@ struct Corr{N} <: AbstractCorr
     Corr(o,po::NTuple{N,Point},pr::NTuple{N,Propagator}) where N=
         new{N}(o,po,pr)
     Corr(N::Int64) = new{N}([],ntuple(x->Point(),N),ntuple(x->Propagator(),N))
-    Corr(x::Base.Generator) = new{N}(x...)
+    Corr(x::Base.Generator) = Corr(x...)
 end
 
 function update(c::Corr{N} where N; k...)
     isempty(k) && (return c)
-    return Corr(get(k,s,getfield(c,s)) for s in fieldnames(Corr{N}))
+    return Corr(get(k,s,getfield(c,s)) for s in fieldnames(Corr))
 end
 
 import Base:show
