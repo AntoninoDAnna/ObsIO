@@ -183,7 +183,7 @@ The correlator itself is stored as a vector of uwreal, the correlator parameters
 
 if the flag `override` is set to true, it override an existing file with the same name
 """
-function write_corr(path,C::Corr; folder=".",ens="ens",set=nothing,label=nothing,comment = "",override::Bool=false)
+function write_corr(path,C::Corr;comment = "",override::Bool=false)
     extra = Dict{String,Any}();
     extra["propagators"] = [prop_to_dict(p) for p in C.propagators]
     file = open_data_file(path,"w",override=override,comment = comment)
@@ -191,6 +191,43 @@ function write_corr(path,C::Corr; folder=".",ens="ens",set=nothing,label=nothing
     ALPHAdobs_close(file)
 end
 
+function write_corr(C::Corr{2};folder=".",ens="ens",set=nothing,subdirs=nothing,comment="",override::Bool = false )
+    dirname = joinpath(folder,ens)
+    dirname = isnothing(set) ? dirname : joinpath(dirname,set)
+    dirname = joinpath(dirname,"2pt")
+    gamma = getfield.(C.points,:gamma) |> x -> join(x,"_")
+    dirname = joinpath(dirname,gamma)
+    dirname =   isnothing(subdirs) ? dirname : joinpath(dirname,subdirs)
+     x0 = getfield.(C.points,:x0) |> x-> join(skipmissing(x),"_")
+    kappa = getfield.(C.propagators,:k) |> x-> join(x,"_")
+    mu = getfield.(C.propagators,:mu) |> x-> join(x,"_")
+    theta1 = join(C.propagators[1].theta,"_")
+    theta2 = join(C.propagators[2].theta,"_")
+
+    filename = string(ens,"_x0_",x0,"_",gamma,"_kappa_",kappa,"_mu_",mu,"_theta1_",theta1,
+                      "_theta2_",theta2,".bdio")
+    return joinpath(dirname,filename)
+    write_corr(joinpath(dirname,filename), C,comment=comment, override=override)
+end
+
+function write_corr(C::Corr{3};folder=".",ens="ens",set=nothing,subdirs=nothing,comment="",override::Bool = false )
+    dirname = joinpath(folder,ens)
+    dirname = isnothing(set) ? dirname : joinpath(dirname,set)
+    dirname = joinpath(dirname,"3pt")
+    gamma = getfield.(C.points,:gamma) |> x -> join(x,"_")
+    dirname = joinpath(dirname,gamma)
+    dirname =   isnothing(subdirs) ? dirname : joinpath(dirname,subdirs)
+    x0 = getfield.(C.points,:x0) |> x-> join(skipmissing(x),"_")
+    kappa = getfield.(C.propagators,:k) |> x-> join(x,"_")
+    mu = getfield.(C.propagators,:mu) |> x-> join(x,"_")
+    theta1 = join(C.propagators[1].theta,"_")
+    theta2 = join(C.propagators[2].theta,"_")
+    theta3 = join(C.propagators[3].theta,"_")
+    filename = string(ens,"_x0_",x0,"_",gamma,"_kappa_",kappa,"_mu_",mu,"_theta1_",theta1,
+                      "_theta2_",theta2,"_theta3_",theta3,".bdio")
+    return joinpath(dirname,filename)
+    write_corr(joinpath(dirname,filename), C,comment=comment, override=override)
+end
 
 dict_to_point(d::Dict) = Point(parse(Gamma,d["gamma"]),
                                d["x0"] == "moving" ? missing : d["x0"],
@@ -200,7 +237,7 @@ dict_to_point(d::Dict) = Point(parse(Gamma,d["gamma"]),
 dict_to_prop(d::Dict) = Propagator(d["kappa"],d["mu"],tuple(d["theta"]...),
                                    tuple(d["pF"]...),dict_to_point(d["src"]),
                                    dict_to_point(d["snk"]),d["seq_prop"])
-function read_corr(path)
+function _read_corr(path)
     obs,extra = read_data(path,get_extra=true)
     prop = tuple((dict_to_prop(d) for d in extra["propagators"])...)
     return Corr(obs,prop)

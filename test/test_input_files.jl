@@ -1,6 +1,9 @@
 using Revise
 using ObsIO
 
-path = joinpath(homedir(),"ift_desk/codes/input_parser/H101DeltaT.in")
+ipath = joinpath(homedir(),"ift_desk/data/J307/J307r000.in")
+dpath = joinpath(homedir(),"ift_desk/data/J307/b1/J307r000_cnfg1.mesons.dat")
+corr = ObsIO.read_input_file(ipath,ObsIO.G5,ObsIO.G5)
+cdata = ObsIO.read_mesons(dpath,ObsIO.G5,ObsIO.G5)
 
-Pr,corr = ObsIO.read_input_file(path)
+corr = ObsIO.corr_obs.(cdata,corr,L=1,real=true)

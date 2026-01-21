@@ -167,7 +167,6 @@ function read_CorrHeader(path::String; legacy::Bool=false)
     return a
 end
 
-
 mutable struct CorrData
     header::CorrHeader
     vcfg::Array{Int32}
@@ -183,7 +182,6 @@ function show(io::IO, c::CorrData)
     println(io, c.header)
 end
 
-
 function find_match(ch,g1::Gamma,g2::Gamma)
     function f(x)
         return (x.type[1] == g1 || g1 ==None) &&  (x.type[2] == g2 || g2==None)
@@ -198,7 +196,7 @@ function find_match(ch,gamma::NTuple{2,Gamma}...)
     findall(f,ch)
 end
 
-function _read_mesons(path,gh,ch,match;nnoise_trunc,legacy,id)
+function _read_mesons(path,gh,ch,match;nnoise_trunc,legacy,id, correction::Bool = false)
     ncorr = gh.ncorr
     tvals = gh.tvals
     nnoise = gh.nnoise
@@ -209,14 +207,15 @@ function _read_mesons(path,gh,ch,match;nnoise_trunc,legacy,id)
         div(fsize - gh.hsize - sum(getfield.(ch, :hsize)), datsize)
         #(total size - header_size) / data_size
     end
-    data_re = Array{Float64}(undef, length(match), ncfg, tvals)
-    data_im = zeros(length(match), ncfg, tvals)
+    N = correction ? div(length(match),2) : length(match)
+    data_re = zeros(N, ncfg, tvals)
+    data_im = zeros(N, ncfg, tvals)
     vcfg = Array{Int32}(undef, ncfg)
     open(path,"r") do data
         seek(data, gh.hsize + sum(c.hsize for c in ch))
         for icfg = 1:ncfg
             vcfg[icfg] = read(data, Int32)
-            c=1
+            c,sgn=1,+1 ## if correction, at div(ncorr,2) it changes to -
             for k = 1:ncorr
                 if !(k in match)
                     seek(data, position(data)  + ch[k].dsize*tvals*nnoise)
@@ -227,20 +226,24 @@ function _read_mesons(path,gh,ch,match;nnoise_trunc,legacy,id)
                     read!(data, tmp)
                     tmp2 = reshape(tmp, (nnoise, tvals))
                     tmp2 = mean(tmp2[1:nnoise_trunc, :], dims=1)
-                    data_re[c, icfg, :] = tmp2[1, :]
+                    data_re[c, icfg, :] .+= sgn * tmp2[1, :]
                 else
                     tmp = Array{Float64}(undef, 2*tvals*nnoise)
                     read!(data, tmp)
                     tmp2 = reshape(tmp, (2, nnoise, tvals))
                     tmp2 = mean(tmp2[:, 1:nnoise_trunc, :], dims=2)
-                    data_re[c, icfg, :] = tmp2[1, 1, :]
-                    data_im[c, icfg, :] = tmp2[2, 1, :]
+                    data_re[c, icfg, :] .+= sgn*tmp2[1, 1, :]
+                    data_im[c, icfg, :] .+= sgn*tmp2[2, 1, :]
                 end
-                c+=1
+                if k==div(ncorr,2)
+                    c,sgn = 1,-1
+                else
+                    c+=1
+                end
             end
         end
     end
-    res = Array{CorrData}(undef, length(match))
+    res = Array{CorrData}(undef, N)
     for (c,cm) in pairs(match)
         res[c] = CorrData(ch[cm], vcfg, data_re[c, :, :], data_im[c, :, :], id)
     end
@@ -276,17 +279,9 @@ read_mesons(path, "G5", "G5", id="H100")
 
 ```
     """
-function read_mesons(path::String;id=nothing,k...)
-    id = get_id(path,id)
-    gh = read_GlobalHeader(path)
-    ch =  read_CorrHeader(path)
-    match = collect(eachindex(ch))
-    return _read_mesons(path,gh,ch,match,id=id;k...)
-end
-
 function read_mesons(path::String,
-                     g1::Gamma,
-                     g2::Gamma;
+                     g1::Gamma = None,
+                     g2::Gamma = None;
                      id::Union{String, Nothing}=nothing,
                      legacy::Bool=false,
                      nnoise_trunc::Union{Int64, Nothing}=nothing)
@@ -309,6 +304,61 @@ function read_mesons(path::String,
     corr_match = find_match(c_header,gamma...)
     return _read_mesons(path,g_header,c_header,corr_match,
                          nnoise_trunc = nnoise_trunc, legacy=legacy,id=id)
+end
+
+function read_mesons(path::Vector{String}, p...;k... )
+    res = [read_mesons(_path,p...;k...) for _path in path]
+    nrep = length(res)
+    ncorr = length(res[1])
+    cdata = Vector{Vector{CorrData}}(undef, ncorr)
+    for icorr = 1:ncorr
+        cdata[icorr] = Vector{CorrData}(undef, nrep)
+        for r = 1:nrep
+            cdata[icorr][r] = res[r][icorr]
+        end
+    end
+    return cdata
+end
+
+function read_mesons_correction(path::String,
+                                g1::Gamma = None,
+                                g2::Gamma = None;
+                                id::Union{String, Nothing}=nothing,
+                                legacy::Bool=false,
+                                nnoise_trunc::Union{Int64, Nothing}=nothing)
+    id = get_id(path,id)
+    g_header = read_GHeader(path)
+    c_header = read_CHeader(path, legacy=legacy)
+    match = find_match(c_header,g1,g2)
+    return _read_mesons(path,g_header,c_header,match,id=id,nnoise_trunc=nnoise_trunc,
+                        legacy=legacy,correction=true)
+end
+
+function read_mesons_correction(path::String,
+                                gamma::NTuple{2,Gamma}...;
+                                id::Union{String, Nothing}=nothing,
+                                legacy::Bool=false,
+                                nnoise_trunc::Union{Int64, Nothing}=nothing)
+    id = get_id(path,id)
+    g_header = read_GHeader(path)
+    c_header = read_CHeader(path, legacy=legacy)
+    match = find_match(c_header,gamma...)
+    return _read_mesons(path,g_header,c_header,match,id=id,nnoise_trunc=nnoise_trunc,
+                        legacy=legacy,correction=true)
+end
+
+function read_mesons_correction(path::Vector{String}, p...;k... )
+    res = [read_mesons_correction(_path,p...;k...) for _path in path]
+    nrep = length(res)
+    ncorr = length(res[1])
+    cdata = Vector{Vector{CorrData}}(undef, ncorr)
+    for icorr = 1:ncorr
+        cdata[icorr] = Vector{CData}(undef, nrep)
+        for r = 1:nrep
+            cdata[icorr][r] = res[r][icorr]
+        end
+    end
+    return cdata
 end
 
 function apply_rw(data::Array{Float64}, W::Matrix{Float64}, vcfg::Union{Nothing, Vector{Int32}}=nothing; id::Union{String, Nothing}=nothing, fs::Bool=false)
@@ -383,7 +433,7 @@ function corr_obs(cdata::CorrData, corr::Corr;
                   rw::Union{Array{Float64, 2}, Nothing}=nothing,
                   L::Int64=1, info::Bool=false,
                   idm::Union{Vector{Int64},Nothing}=nothing,
-                  nms::Int64=Int64(maximum(cdata.vcfg)),replica = 0,
+                  nms::Int64=Int64(maximum(cdata.vcfg)),
                   flag_strange::Bool=false)
     real ? data = cdata.re_data ./ L^3 : data = cdata.im_data ./ L^3
     nt = size(data)[2]
@@ -405,6 +455,8 @@ function corr_obs(cdata::CorrData, corr::Corr;
         return corr
     end
 end
+
+
     #=
 function read_mesons(path::Vector{String}, g1::Union{String, Nothing}=nothing, g2::Union{String, Nothing}=nothing; id::Union{String, Nothing}=nothing, legacy::Bool=false,
     nnoise_trunc::Union{Int64, Nothing}=nothing)
