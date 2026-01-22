@@ -459,7 +459,7 @@ end
 function corr_obs(cdata::Vector{CorrData}, corr;
                   real::Bool=true,
                   replica::Union{Vector{Int64},Nothing} = nothing,
-                  rw::Union{Array{Float64, 2}, Nothing}=nothing,
+                  rw::Union{Vector{Array{Float64, 2}}, Nothing}=nothing,
                   L::Int64=1, info::Bool=false,
                   idm::Union{Vector{Int64},Nothing}=nothing,
                   nms::Int64=0,
@@ -484,16 +484,15 @@ function corr_obs(cdata::Vector{CorrData}, corr;
         getfield.(cdata,s)./L^3
     end
     nt = size(data[1])[2]
-
     if isnothing(rw)
-        obs = cat(data[1],data[2:end]...,dims=1) |>
+        obs = vcat(data...) |>
             x->[uwreal(x[:, x0], id, replica, idm, nms) for x0 = 1:nt]
     else
-        data_r, W = apply_rw(data, rw, cdata.vcfg, id=cdata.id, fs=flag_strange)
-        ow =cat(data_r[1],data[2:end]...,dims=1) |>
+        data_r, W = apply_rw(data, rw, vcfg, id=id, fs=flag_strange)
+        ow =vcat(data_r...) |>
             x-> [uwreal(x[:, x0],id, replica, idm, nms) for x0 = 1:nt]
-        W_obs =cat(W[1],W[2:end],dims=1) |>
-            uwreal(W, id,replica, idm, nms)
+        W_obs =vcat(W...) |>
+            x->uwreal(x, id,replica, idm, nms)
         obs = [ow[x0] / W_obs for x0 = 1:nt]
     end
     corr = update(corr,obs=obs)
@@ -580,7 +579,6 @@ function read_rw_openQCD2(path::String; print_info::Bool=false)
     end
     return permutedims(hcat(data_array...), (2,1))
 end
-
 
 function read_array_rwf_dat_openQCD2(data::IOStream; print_info::Bool=false)
     d = read(data, Int32)
