@@ -456,13 +456,13 @@ function corr_obs(cdata::CorrData, corr::Corr;
     end
 end
 
-function corr_obs(cdata::Vector{CorrData}, corr::Vector{Corr};
+function corr_obs(cdata::Vector{CorrData}, corr;
                   real::Bool=true,
                   replica::Union{Vector{Int64},Nothing} = nothing,
                   rw::Union{Array{Float64, 2}, Nothing}=nothing,
                   L::Int64=1, info::Bool=false,
                   idm::Union{Vector{Int64},Nothing}=nothing,
-                  nms::Int64=Int64(maximum(cdata.vcfg))
+                  nms::Int64=0,
                   flag_strange::Bool=false)
     nrep = length(cdata)
     id = let
@@ -471,10 +471,11 @@ function corr_obs(cdata::Vector{CorrData}, corr::Vector{Corr};
         ids[1]
     end
     vcfg = getfield.(cdata,:vcfg)
-    replicas = isnothing(replica) ? Int64.(maximum.(vcfg)) : replica
+    replica = isnothing(replica) ? Int64.(maximum.(vcfg)) : replica
+    nms==0 && (nms=sum(replica))
     if isnothing(idm)
         a = vcfg[1]
-        for i in 2:nr
+        for i in 2:nrep
             a = [a; a[end] .+ vcfg[i]]
         end
         idm = Int64.(a)
@@ -485,11 +486,11 @@ function corr_obs(cdata::Vector{CorrData}, corr::Vector{Corr};
     nt = size(data[1])[2]
 
     if isnothing(rw)
-        obs = cat(data[1],data[2:end],dims=1) |>
+        obs = cat(data[1],data[2:end]...,dims=1) |>
             x->[uwreal(x[:, x0], id, replica, idm, nms) for x0 = 1:nt]
     else
         data_r, W = apply_rw(data, rw, cdata.vcfg, id=cdata.id, fs=flag_strange)
-        ow =cat(data_r[1],data[2:end],dims=1) |>
+        ow =cat(data_r[1],data[2:end]...,dims=1) |>
             x-> [uwreal(x[:, x0],id, replica, idm, nms) for x0 = 1:nt]
         W_obs =cat(W[1],W[2:end],dims=1) |>
             uwreal(W, id,replica, idm, nms)
