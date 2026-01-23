@@ -19,7 +19,7 @@ function open_data_file(path,mode; comment="",override=false)
         elseif mode =="d"
             Base.rm(path,force=true)
         else
-            throw(IOError("$(basename(path)) already exists"))
+            error("$(basename(path)) already exists")
         end
     end
     mkpath(dirname(path))

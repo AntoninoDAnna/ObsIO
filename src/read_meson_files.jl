@@ -174,6 +174,8 @@ mutable struct CorrData
     im_data::Array{Float64}
     id::String
     CorrData(a, b, c, d, e) = new(a, b, c, d, e,)
+    CorrData(header, ncfg, nt, id) = new(header,collect(1:ncfg),
+                                         zeros(ncfg,nt),zeros(ncfg,nt),id)
 end
 
 function show(io::IO, c::CorrData)
@@ -282,9 +284,9 @@ read_mesons(path, "G5", "G5", id="H100")
 function read_mesons(path::String,
                      g1::Gamma = None,
                      g2::Gamma = None;
-                     id::Union{String, Nothing}=nothing,
-                     legacy::Bool=false,
-                     nnoise_trunc::Union{Int64, Nothing}=nothing)
+                     id = nothing,
+                     legacy = false,
+                     nnoise_trunc = nothing)
     id = get_id(path,id)
     g_header = read_GlobalHeader(path)
     c_header = read_CorrHeader(path, legacy=legacy)
@@ -295,9 +297,9 @@ end
 
 function read_mesons(path::String,
                      gamma::NTuple{2,Gamma}...;
-                     id::Union{String, Nothing}=nothing,
-                     legacy::Bool=false,
-                     nnoise_trunc::Union{Int64, Nothing}=nothing)
+                     id = nothing,
+                     legacy = false,
+                     nnoise_trunc = nothing)
     id = get_id(path,id)
     g_header = read_GlobalHeader(path)
     c_header = read_CorrHeader(path, legacy=legacy)
@@ -306,7 +308,7 @@ function read_mesons(path::String,
                          nnoise_trunc = nnoise_trunc, legacy=legacy,id=id)
 end
 
-function read_mesons(path::Vector{String}, p...;k... )
+function read_mesons(path::AbstractVector{String}, p...;k... )
     res = [read_mesons(_path,p...;k...) for _path in path]
     nrep = length(res)
     ncorr = length(res[1])
@@ -323,12 +325,12 @@ end
 function read_mesons_correction(path::String,
                                 g1::Gamma = None,
                                 g2::Gamma = None;
-                                id::Union{String, Nothing}=nothing,
-                                legacy::Bool=false,
-                                nnoise_trunc::Union{Int64, Nothing}=nothing)
+                                id = nothing,
+                                legacy = false,
+                                nnoise_trunc = nothing)
     id = get_id(path,id)
-    g_header = read_GHeader(path)
-    c_header = read_CHeader(path, legacy=legacy)
+    g_header = read_GlobalHeader(path)
+    c_header = read_CorrHeader(path, legacy=legacy)
     match = find_match(c_header,g1,g2)
     return _read_mesons(path,g_header,c_header,match,id=id,nnoise_trunc=nnoise_trunc,
                         legacy=legacy,correction=true)
@@ -336,12 +338,12 @@ end
 
 function read_mesons_correction(path::String,
                                 gamma::NTuple{2,Gamma}...;
-                                id::Union{String, Nothing}=nothing,
-                                legacy::Bool=false,
-                                nnoise_trunc::Union{Int64, Nothing}=nothing)
+                                id = nothing,
+                                legacy = false,
+                                nnoise_trunc = nothing)
     id = get_id(path,id)
-    g_header = read_GHeader(path)
-    c_header = read_CHeader(path, legacy=legacy)
+    g_header = read_GlobalHeader(path)
+    c_header = read_CorrHeader(path, legacy=legacy)
     match = find_match(c_header,gamma...)
     return _read_mesons(path,g_header,c_header,match,id=id,nnoise_trunc=nnoise_trunc,
                         legacy=legacy,correction=true)
@@ -361,7 +363,28 @@ function read_mesons_correction(path::Vector{String}, p...;k... )
     return cdata
 end
 
-function apply_rw(data::Array{Float64}, W::Matrix{Float64}, vcfg::Union{Nothing, Vector{Int32}}=nothing; id::Union{String, Nothing}=nothing, fs::Bool=false)
+function read_mesons_by_conf(path::Vector{String},gamma...;
+                            nconf = length(path),
+                            id=nothing, k...)
+    id = get_id(path[1],id)
+    gh = read_GlobalHeader(path[1])
+    ch = read_CorrHeader(path[1])
+    match = find_mathc(ch,gamma...)
+    Ncorr = length(match)
+    res = [CorrData(ch[i],nconf,gh,tvals,id) for i in eachindex(match)]
+    for p in path
+        _r = _read_mesons(p,gh,ch,match,id=id;k...)
+        for i in eachindex(_r)
+            for cdx in eachindex(_r.vcfg)
+                res[i].re_data[_r.vcfg[cdx],:] .= _r.re_data[cdx,:]
+                res[i].im_data[_r.vcfg[cdx],:] .= _r.im_data[cdx,:]
+            end
+        end
+    end
+    return res
+end
+
+function apply_rw(data::AbstractArray{Float64}, W::AbstractMatrix{Float64}, vcfg = nothing; id = nothing, fs = false)
     nc = size(W,2)
     if isnothing(vcfg)
         vcfg = collect(1:nc)
@@ -392,7 +415,8 @@ function apply_rw(data::Array{Float64}, W::Matrix{Float64}, vcfg::Union{Nothing,
     end
 end
 
-function apply_rw(data::Vector{<:Array{Float64}}, W::Vector{Matrix{Float64}}, vcfg::Union{Nothing, Vector{Vector{Int32}}}=nothing; id::Union{String, Nothing}=nothing, fs::Bool=false)
+function apply_rw(data::AbstractVector{<:AbstractArray{Float64}},
+                  W::AbstractVector{<:AbstractMatrix{Float64}}, vcfg = nothing; id = nothing, fs = false)
     nc = size.(W, 2)
     if isnothing(vcfg)
         vcfg = [collect(1:nc[k]) for k=1:length(nc)]
@@ -429,12 +453,12 @@ function apply_rw(data::Vector{<:Array{Float64}}, W::Vector{Matrix{Float64}}, vc
 end
 
 function corr_obs(cdata::CorrData, corr::Corr;
-                  real::Bool=true,
+                  real = true,
                   rw::Union{Array{Float64, 2}, Nothing}=nothing,
-                  L::Int64=1, info::Bool=false,
-                  idm::Union{Vector{Int64},Nothing}=nothing,
-                  nms::Int64=Int64(maximum(cdata.vcfg)),
-                  flag_strange::Bool=false)
+                  L = 1, info = false,
+                  idm = nothing,
+                  nms = Int64(maximum(cdata.vcfg)),
+                  flag_strange = false)
     real ? data = cdata.re_data ./ L^3 : data = cdata.im_data ./ L^3
     nt = size(data)[2]
     idm = isnothing(idm) ? Int64.(cdata.vcfg) : idm
@@ -456,14 +480,14 @@ function corr_obs(cdata::CorrData, corr::Corr;
     end
 end
 
-function corr_obs(cdata::Vector{CorrData}, corr;
-                  real::Bool=true,
-                  replica::Union{Vector{Int64},Nothing} = nothing,
+function corr_obs(cdata::AbstractVector{CorrData}, corr;
+                  real = true,
+                  replica = nothing,
                   rw::Union{Vector{Array{Float64, 2}}, Nothing}=nothing,
-                  L::Int64=1, info::Bool=false,
-                  idm::Union{Vector{Int64},Nothing}=nothing,
-                  nms::Int64=0,
-                  flag_strange::Bool=false)
+                  L = 1, info = false,
+                  idm = nothing,
+                  nms = 0,
+                  flag_strange = false)
     nrep = length(cdata)
     id = let
         ids = getfield.(cdata,:id)
@@ -653,6 +677,48 @@ function read_ms1(path::String; v::String="1.2")
     [W[k, :] = prod(mean(exp.(.-r_data[k]), dims=2), dims=1) for k = 1:nrw]
     return W
 end
+
+function concat_data!(data1::Vector{CorrData}, data2::Vector{CorrData})
+    N = length(data1)
+    if length(data1) != length(data2)
+        error("number of correlators do not match")
+    end
+    for k = 1:N
+        data1[k].vcfg = vcat(data1[k].vcfg, data2[k].vcfg)
+        data1[k].re_data = vcat(data1[k].re_data, data2[k].re_data)
+        data1[k].im_data = vcat(data1[k].im_data, data2[k].im_data)
+        idx = sortperm(data1[k].vcfg)
+        data1[k].vcfg = data1[k].vcfg[idx]
+        data1[k].re_data = data1[k].re_data[idx, :]
+        data1[k].im_data = data1[k].im_data[idx, :]
+    end
+    return nothing
+end
+
+function concat_data!(data1::Vector{Vector{CorrData}}, data2::Vector{Vector{CorrData}})
+    N = length(data1)
+    if length(data1) != length(data2)
+        error("number of correlators do not match")
+    end
+    R = length(data1[1])
+    if length(data1[1]) != length(data2[1])
+        error("number of replicas do not match")
+    end
+    for k = 1:N
+        for r = 1:R
+            data1[k][r].vcfg = vcat(data1[k][r].vcfg, data2[k][r].vcfg)
+            data1[k][r].re_data = vcat(data1[k][r].re_data, data2[k][r].re_data)
+            data1[k][r].im_data = vcat(data1[k][r].im_data, data2[k][r].im_data)
+            idx = sortperm(data1[k][r].vcfg)
+            data1[k][r].vcfg = data1[k][r].vcfg[idx]
+            data1[k][r].re_data = data1[k][r].re_data[idx, :]
+            data1[k][r].im_data = data1[k][r].im_data[idx, :]
+
+        end
+    end
+    return nothing
+end
+
 
 #=
 @doc raw"""
@@ -852,7 +918,7 @@ dat2 = read_mesons([path3, path4], "G5", "G5")
 concat_data!(dat, dat2)
 ```
 """
-function concat_data!(data1::Vector{juobs.CData}, data2::Vector{juobs.CData})
+function concat_data!(data1::Vector{CorrData}, data2::Vector{juobs.CData})
     N = length(data1)
     if length(data1) != length(data2)
         error("number of correlators do not match")
