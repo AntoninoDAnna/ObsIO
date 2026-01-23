@@ -198,7 +198,11 @@ function find_match(ch,gamma::NTuple{2,Gamma}...)
     findall(f,ch)
 end
 
-function _read_mesons(path,gh,ch,match;nnoise_trunc,legacy,id, correction::Bool = false)
+function _read_mesons(path,gh,ch,match;
+                      nnoise_trunc=false,
+                      legacy=false,
+                      id,
+                      correction::Bool = false)
     ncorr = gh.ncorr
     tvals = gh.tvals
     nnoise = gh.nnoise
@@ -365,19 +369,20 @@ end
 
 function read_mesons_by_conf(path::Vector{String},gamma...;
                             nconf = length(path),
-                            id=nothing, k...)
+                            id=nothing, legacy=false, nnoise_trunc=nothing)
     id = get_id(path[1],id)
     gh = read_GlobalHeader(path[1])
     ch = read_CorrHeader(path[1])
-    match = find_mathc(ch,gamma...)
+    match = find_match(ch,gamma...)
     Ncorr = length(match)
-    res = [CorrData(ch[i],nconf,gh,tvals,id) for i in eachindex(match)]
+    res = [CorrData(ch[i],nconf,gh.tvals,id) for i in eachindex(match)]
     for p in path
-        _r = _read_mesons(p,gh,ch,match,id=id;k...)
+        _r = _read_mesons(p,gh,ch,match,id=id,legacy=legacy,
+                                nnoise_trunc=nnoise_trunc)
         for i in eachindex(_r)
-            for cdx in eachindex(_r.vcfg)
-                res[i].re_data[_r.vcfg[cdx],:] .= _r.re_data[cdx,:]
-                res[i].im_data[_r.vcfg[cdx],:] .= _r.im_data[cdx,:]
+            for cdx in eachindex(_r[i].vcfg)
+                res[i].re_data[_r[i].vcfg[cdx],:] .= _r[i].re_data[cdx,:]
+                res[i].im_data[_r[i].vcfg[cdx],:] .= _r[i].im_data[cdx,:]
             end
         end
     end
