@@ -1,12 +1,16 @@
-@doc """
-     Point
+import Base:show
 
-Store the information of a point in a correlator
+@doc raw"""
+    struct Point
 
-# Fields
-- `gamma::Gamma`: gamma structure at the point. See also [`Gamma`](@ref)
-- `x0::Union{Int64,Missing}`: Time position in lattice units. If `missing` then is the moving point
-"""
+Immutable structure that contains all information regarding a point in a correlator
+
+## Fields
+- `gamma::Gamma`: gamma structure (See also [`Gamma`](@ref))
+- `x0::Union{Int64,Missing}`: Position in lattice unit. If `missing` then it rappresent the varying point.
+- `qsmearing::QuarkSmearing.Type`: Quark Smearing at x0 (See also [`QuarkSmearing](@ref))
+- `gsmearing::GluonicSmearing.Type`: Gluonic Smearing at x0 (See also [`GluonicSmearing](@ref))
+        """
 struct Point
     gamma::Gamma
     x0::Union{Int64,Missing}
@@ -17,11 +21,22 @@ struct Point
     Point(x::Base.Generator) =new(x...)
 end
 
-function update(p::Point;k...)
-    isempty(k) && (return p)
-    return Point(get(k,s,getfield(p,s)) for s in fieldnames(Point))
-end
+@doc raw"""
+    struct Propagator
 
+Immutable structure that contains all the informations regarding a propagator
+
+## Fields
+
+- `k::Float64, mu::Float64`: hopping parameter and twisted mass of the quark
+- `theta::NTuple{3,Float64}`: Twisted Boundary Condition associated to the propagator that induce momentum on the quark
+- `pF::NTuple{4,Int64}`: Quantized momentum associate to the propagator.
+- `src::Point,snk::Point`: source and sink Point (See also [`Point`](@ref))
+- `seq_prop::Bool`: flag for sequential propagator.
+
+## Warning
+  `seq_prop` accept also `Int64`. This is an internal functionality used to keep information on the source propagator and should not be used externally.
+    """
 struct Propagator
     k::Float64
     mu::Float64
@@ -33,11 +48,6 @@ struct Propagator
     Propagator() = new(0.,0.,(0.,0.,0),(0,0,0,0),Point(),Point(),-1)
     Propagator(k,m,t,p,src,snk,seq_prop=false) = new(k,m,t,p,src,snk,seq_prop)
     Propagator(x::Base.Generator) = new(x...)
-end
-
-function update(p::Propagator;k...)
-    isempty(k) && (return p)
-    return Propagator(get(k,s,getfield(p,s)) for s in fieldnames(Propagator))
 end
 
 abstract type AbstractCorr end
@@ -59,12 +69,147 @@ struct Corr{N} <: AbstractCorr
     Corr(x::Base.Generator) = Corr(x...)
 end
 
-function update(c::Corr{N} where N; k...)
+kappa(c::Corr{N}) where N = ntuple(x->c.propagator[x].k, N)
+mu(c::Corr{N}) where N = ntuple(x->c.propagator[x].mu, N)
+theta(c::Corr{N}) where N = ntuple(x->c.propagator[x].theta, N)
+src(c::Corr{N}) where N = c.point[1].x0
+snk(c::Corr{N}) where N = c.point[end].x0
+ts(c::corr{N}) where N = snk(c) - src(c)
+
+
+@doc raw"""
+     __update__(p::Point;k...)
+     __update__(p::Propagator;k...)
+
+return a new object that updates `p` with the values in `k`. If no new information is given, then return `p`
+"""
+function __update__(p::Point;k...)
+    isempty(k) && (return p)
+    return Point(get(k,s,getfield(p,s)) for s in fieldnames(Point))
+end
+
+function __update__(p::Propagator;k...)
+    isempty(k) && (return p)
+    return Propagator(get(k,s,getfield(p,s)) for s in fieldnames(Propagator))
+end
+
+function __update__(c::Corr{N} where N; k...)
     isempty(k) && (return c)
     return Corr(get(k,s,getfield(c,s)) for s in fieldnames(Corr))
 end
 
-import Base:show
+
+struct GlobalHeader
+    ncorr::Int32
+    nnoise::Int32
+    tvals::Int32
+    noise::Noise.Type
+    hsize::Int32
+    GlobalHeader(a,b,c,d) = new(a,b,c,d,4*4)
+    GlobalHeader(x::Vector{Int32}) = new(x[1],x[2],x[3],Noise.Type(x[4]),4*4)
+end
+
+
+mutable struct Smearing{T<:EnumClass}
+    type::T
+    niter::Int32
+    eps::Float64
+    Smearing(t::T) where {T<:EnumClass} = new{T}(t, 0, 0.0)
+    Smearing(t::T, n, e,) where {T<:EnumClass} = new{T}(t, n, e)
+end
+
+function Base.show(io::IO, s::Smearing)
+    ST = typeof(s.type)
+    if isa(s.type,QuarkSmearing.Type) && s.type == QuarkSmearing.Local
+        print(io,"Quark Smering: ",s.type)
+    elseif isa(s.type,QuarkSmearing.Type)
+        print(io,"Quark Smering: ",s.type,", niter: ",s.niter,", eps: ",s.eps)
+    elseif isa(s.type,GluonicSmearing.Type) && s.type == GluonicSmearing.Local
+        print(io,"Gluonic Smering: ",s.type)
+    elseif isa(s.type,GluonicSmearing.Type)
+        print(io,"Gluonic Smering: ",s.type,", niter: ",s.niter,", eps: ",s.eps)
+    end
+end
+
+mutable struct CorrHeader
+    k::NTuple{2,Float64}
+    mu::NTuple{2,Float64}
+    dp::NTuple{2,Float64}
+    theta::Vector{Vector{Float64}}
+    q::NTuple{2,Smearing}
+    g::NTuple{2,Smearing}
+    type::NTuple{2,Gamma}
+    x0::Int32
+    is_real::Bool
+    hsize::Int32 #headersize
+    dsize::Int32 #datasize / (nnoise * T * ncfg)
+    function CorrHeader(aux_f::Vector{Float64}, aux_i::Vector{Int32}, theta::Vector{Float64}, sm_par::Vector{Smearing})
+        a = new()
+        a.k  = (aux_f[1],aux_f[2])
+        a.mu = (aux_f[3],aux_f[4])
+        a.dp = (aux_f[5],aux_f[6])
+        a.type = Gamma.((aux_i[1],aux_i[2]))
+        a.x0 = aux_i[3]
+        a.is_real = aux_i[4]==1
+        a.theta = [theta[1:3],theta[4:6]]
+        a.q = (sm_par[1],sm_par[2])
+        a.g = (sm_par[3],sm_par[4])
+        a.hsize = 8*12 + 4*8 #without smearing parameters niter, neps
+        for q in a.q
+            q.type == QuarkSmearing.Local && continue;
+            a.hsize += 8+4
+        end
+        for g in a.g
+            if !(g.type == GluonicSmearing.APE || g.type == GluonicSmearing.WilsonFlow3D)
+                continue;
+            end
+            a.hsize += 8+4
+        end
+        a.dsize = a.is_real ? 8 : 16
+        return a
+    end
+    function CorrHeader(aux_f::Vector{Float64}, aux_i::Vector{Int32})
+        a = new()
+        a.k  = (aux_f[1],aux_f[2])
+        a.mu = (aux_f[3],aux_f[4])
+        a.dp = zeros(2)
+        a.type = Gamma.((aux_i[1],aux_i[2]))
+        a.x0 = aux_i[3]
+        a.is_real = aux_i[4]==1
+        a.theta= [zeros(3),zeros(3)]
+        a.hsize = 8*12 + 4*8 #without smearing parameters niter, neps
+        a.dsize = 16 - 8* a.is_real
+        return a
+    end
+end
+
+function Base.show(io::IO, c::CorrHeader)
+    println(io,"kappa: ",c.k,". ")
+    println(io,"mu: ",c.mu,". ")
+    println(io,"dp: ", c.dp,". ")
+    println(io,"theta: ",c.theta[1],", ",c.theta[2],". ")
+    println(io,c.q[1],", ",c.q[2],", ")
+    println(io,c.g[1],", ",c.g[2],", ")
+    println(io,"type: ",c.type,", ")
+    print(io,"source: ", c.x0,", ")
+end
+
+mutable struct CorrData
+    header::CorrHeader
+    vcfg::Array{Int32}
+    re_data::Array{Float64}
+    im_data::Array{Float64}
+    id::String
+    CorrData(a, b, c, d, e) = new(a, b, c, d, e,)
+    CorrData(header, ncfg, nt, id) = new(header,collect(1:ncfg),
+                                         zeros(ncfg,nt),zeros(ncfg,nt),id)
+end
+
+function show(io::IO, c::CorrData)
+    println(io, "Correlator data. Ensemble ",c.id)
+    println(io, "Configuration length ", c.vcfg)
+    println(io, c.header)
+end
 
 function show_customized_propagator(io::IO, p::Propagator,label::Vector{<:AbstractString};tab="")
     print(io,tab,"(k,mu): (",p.k," ",p.mu,")")
@@ -106,23 +251,4 @@ function show(io::IO,p::Propagator)
     end
     println(io, "source: \n", p.src)
     println(io, "sink: \n", p.snk)
-end
-
-@doc"""
-        read_data(path;kwargs...)
-
-It read the data in `path` according to `kwargs`
-This function call the relevant function according to the extention of `path`
-
-"""
-function read_data(path; kwargs...)
-    if !isfile(path)
-        error("file $path does not exist")
-    end
-    b = basename(path)
-    if contais("mesons.dat", "")  == join(b[end-1:end],".")
-        return read_mesons(path;kwargs...)
-    else
-        error("This type of file is not supported")
-    end
 end
