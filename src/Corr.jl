@@ -127,7 +127,7 @@ snk(c::Corr{N}) where N = c.point[end].x0
 
 return the source-sink distance in lattice. assume that `N ⪩ 3`
     """
-ts(c::corr{N}) where N = snk(c) - src(c)
+ts(c::Corr{N}) where N = snk(c) - src(c)
 
 
 @doc raw"""
@@ -184,7 +184,7 @@ mutable struct Smearing{T<:EnumClass}
     Smearing(t::T, n, e,) where {T<:EnumClass} = new{T}(t, n, e)
 end
 
-@doc raw """
+@doc raw"""
      mutable struct CorrHeader
 
 contains the information inside a correlator Header of a meson.dat file

@@ -362,7 +362,7 @@ function corr_obs(cdata::CorrData, corr::Corr;
         W_obs = uwreal(W, cdata.id, idm, nms)
         obs = [ow[x0] / W_obs for x0 = 1:nt]
     end
-    corr = update(corr,obs=obs)
+    corr = __update__(corr,obs=obs)
     if info
         return !isnothing(rw) ?  (corr,obs) : (corr,ow,W_obs)
     else
@@ -409,7 +409,7 @@ function corr_obs(cdata::AbstractVector{CorrData}, corr;
             x->uwreal(x, id,replica, idm, nms)
         obs = [ow[x0] / W_obs for x0 = 1:nt]
     end
-    corr = update(corr,obs=obs)
+    corr = __update__(corr,obs=obs)
     if info
         return !isnothing(rw) ?  (corr,obs) : (corr,ow,W_obs)
     else

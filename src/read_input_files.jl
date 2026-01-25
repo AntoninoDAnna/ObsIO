@@ -58,12 +58,12 @@ function resolve_seq_prop(p1::Propagator,p2::Propagator,
     res_props = (p1,p2)
     if isa(p1.seq_prop, Int64)
         idx = p1.seq_prop +1
-        update(p1,seq_prop = true)
+        __update__(p1,seq_prop = true)
         seq_props = resolve_seq_prop(props[idx],p2,props)
         res_props = (p1,seq_prop...)
     elseif isa(p2.seq_prop,Int64)
         idx = p2.seq_prop +1
-        update(p2,seq_prop = true)
+        __update__(p2,seq_prop = true)
         seq_prop = resolve_seq_prop(p1,props[idx],props)
         res_props = (seq_prop...,p2)
     end
@@ -73,12 +73,12 @@ end
 function update_propagators_tuple(props::NTuple{2,Propagator},
                                   x0, types,qsmear,gsmear)
     p1,p2 = props
-    p1 = update(p1,src = update(p1.src,x0=x0, qsmearing = qsmear[1],
+    p1 = __update__(p1,src = __update__(p1.src,x0=x0, qsmearing = qsmear[1],
                                 gsmearing = gsmear[1],gamma = types[1]),
-                snk = update(p1.snk,x0=missing, qsmearing = qsmear[2],
+                snk = __update__(p1.snk,x0=missing, qsmearing = qsmear[2],
                              gsmearing = gsmear[2],gamma = types[2]))
-    p2 = update(p2,src = p1.snk)
-    p2 = update(p2,snk = p1.src)
+    p2 = __update__(p2,src = p1.snk)
+    p2 = __update__(p2,snk = p1.src)
     return (p1,p2)
 end
 
@@ -86,13 +86,13 @@ function update_propagators_tuple(props::NTuple{3,Propagator},
                                   x0, types,qsmear,gsmear)
     p1,p2,p3 = props # p3 is the sequential propagator
 
-    p1 = update(p1,src = update(p1.src,x0=x0,qsmearing=qsmear[1],
+    p1 = __update__(p1,src = __update__(p1.src,x0=x0,qsmearing=qsmear[1],
                                 gsmearing = gsmear[1],gamma = types[1]),
-                snk = update(p1.snk,x0=missing,qsmearing=qsmear[2],
+                snk = __update__(p1.snk,x0=missing,qsmearing=qsmear[2],
                              gsmearing = gsmear[2],gamma = types[2]))
-    p2 = update(p2,src = p1.src)
-    p2 = update(p2,snk = p3.src)
-    p3 = update(p3,snk = p1.snk)
+    p2 = __update__(p2,src = p1.src)
+    p2 = __update__(p2,snk = p3.src)
+    p3 = __update__(p3,snk = p1.snk)
     return (p1,p2,p3)
 end
 
