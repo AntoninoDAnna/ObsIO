@@ -50,8 +50,26 @@ struct Propagator
     Propagator(x::Base.Generator) = new(x...)
 end
 
+@doc raw"""
+     AbstractCorr
+
+Abstract Type for correlators
+"""
 abstract type AbstractCorr end
 
+@doc raw"""
+     struct Corr{N} <:AbstractCorr
+
+immutable structure for `N` point correlators.
+This structure support correlators where only one `Point` is
+moving and the other `N-1` point are fixed.
+
+## Fields
+
+- `obs::AbstractVector`: Observable Vector. It contains the correlator data. Time dependande is coded in the index.
+- `points::NTuple{N,Point}`: Correlator's Point. By convention, `Point`s are ordered in sequence with the first point being the source and the last point the sink (See also [`Point`](@ref))
+- `propagators::NTuple{N,Proopagator`: Propagators list. By convention, `Propagator`s are ordered in sequence. The sink of `propagator[i]` is the source of `propagators[i+1]`. Moreover, the source of `propagator[i]` is `points[i]` and the sink is `point[i%N +1]`. (See also [`Propagator`](@ref))
+"""
 struct Corr{N} <: AbstractCorr
     obs::AbstractVector
     points::NTuple{N,Point}
@@ -69,19 +87,59 @@ struct Corr{N} <: AbstractCorr
     Corr(x::Base.Generator) = Corr(x...)
 end
 
+@doc raw"""
+     kappa(c::Corr{N}) where N
+
+return a tuple containing the hopping parameters of the propagator
+"""
 kappa(c::Corr{N}) where N = ntuple(x->c.propagator[x].k, N)
+
+@doc raw"""
+     mu(c::Corr{N}) where N
+
+return a tuple containing the twisted masses of the propagator
+"""
 mu(c::Corr{N}) where N = ntuple(x->c.propagator[x].mu, N)
+
+@doc raw"""
+     theta(c::Corr{N}) where N
+
+return a tuple containing the theta boundary conditions of the propagator
+"""
 theta(c::Corr{N}) where N = ntuple(x->c.propagator[x].theta, N)
+
+@doc raw"""
+     src(c::Corr{N}) where N
+
+return the source position in lattice units. Equivalent to `c.point[1].x0`
+"""
 src(c::Corr{N}) where N = c.point[1].x0
+
+@doc raw"""
+     src(c::Corr{N}) where N
+
+return the source position in lattice units. Equivalent to `c.point[end].x0`
+"""
 snk(c::Corr{N}) where N = c.point[end].x0
+
+@doc raw"""
+     src(c::Corr{N}) where N
+
+return the source-sink distance in lattice. assume that `N ⪩ 3`
+    """
 ts(c::corr{N}) where N = snk(c) - src(c)
 
 
 @doc raw"""
      __update__(p::Point;k...)
      __update__(p::Propagator;k...)
+     __update__(c::Corr{N} where N; k...)
 
-return a new object that updates `p` with the values in `k`. If no new information is given, then return `p`
+return a new object that updates the original object with the values in `k`. If no new information is given, then return the original
+
+## Warning
+
+This function is an internal method used to simplify the reading data files process. It is not meant to be used by the external users.
 """
 function __update__(p::Point;k...)
     isempty(k) && (return p)
@@ -98,7 +156,11 @@ function __update__(c::Corr{N} where N; k...)
     return Corr(get(k,s,getfield(c,s)) for s in fieldnames(Corr))
 end
 
+@doc raw"""
+     struct GlobalHeader
 
+Contains all the information inside the global header of a meson.dat file.
+"""
 struct GlobalHeader
     ncorr::Int32
     nnoise::Int32
@@ -109,7 +171,11 @@ struct GlobalHeader
     GlobalHeader(x::Vector{Int32}) = new(x[1],x[2],x[3],Noise.Type(x[4]),4*4)
 end
 
+@doc raw"""
+     mutable struct Smearing{T<:EnumClass}
 
+contains the Smearing informations. See also [`GluonicSmearing`](@ref), [`QuarkSmearing`](@ref)
+"""
 mutable struct Smearing{T<:EnumClass}
     type::T
     niter::Int32
@@ -118,19 +184,11 @@ mutable struct Smearing{T<:EnumClass}
     Smearing(t::T, n, e,) where {T<:EnumClass} = new{T}(t, n, e)
 end
 
-function Base.show(io::IO, s::Smearing)
-    ST = typeof(s.type)
-    if isa(s.type,QuarkSmearing.Type) && s.type == QuarkSmearing.Local
-        print(io,"Quark Smering: ",s.type)
-    elseif isa(s.type,QuarkSmearing.Type)
-        print(io,"Quark Smering: ",s.type,", niter: ",s.niter,", eps: ",s.eps)
-    elseif isa(s.type,GluonicSmearing.Type) && s.type == GluonicSmearing.Local
-        print(io,"Gluonic Smering: ",s.type)
-    elseif isa(s.type,GluonicSmearing.Type)
-        print(io,"Gluonic Smering: ",s.type,", niter: ",s.niter,", eps: ",s.eps)
-    end
-end
+@doc raw """
+     mutable struct CorrHeader
 
+contains the information inside a correlator Header of a meson.dat file
+"""
 mutable struct CorrHeader
     k::NTuple{2,Float64}
     mu::NTuple{2,Float64}
@@ -183,17 +241,11 @@ mutable struct CorrHeader
     end
 end
 
-function Base.show(io::IO, c::CorrHeader)
-    println(io,"kappa: ",c.k,". ")
-    println(io,"mu: ",c.mu,". ")
-    println(io,"dp: ", c.dp,". ")
-    println(io,"theta: ",c.theta[1],", ",c.theta[2],". ")
-    println(io,c.q[1],", ",c.q[2],", ")
-    println(io,c.g[1],", ",c.g[2],", ")
-    println(io,"type: ",c.type,", ")
-    print(io,"source: ", c.x0,", ")
-end
+@doc raw"""
+     mutable struct CorrData
 
+Contains all the correlator information saved inside a meson.dat
+"""
 mutable struct CorrData
     header::CorrHeader
     vcfg::Array{Int32}
@@ -203,6 +255,30 @@ mutable struct CorrData
     CorrData(a, b, c, d, e) = new(a, b, c, d, e,)
     CorrData(header, ncfg, nt, id) = new(header,collect(1:ncfg),
                                          zeros(ncfg,nt),zeros(ncfg,nt),id)
+end
+
+function Base.show(io::IO, s::Smearing)
+    ST = typeof(s.type)
+    if isa(s.type,QuarkSmearing.Type) && s.type == QuarkSmearing.Local
+        print(io,"Quark Smering: ",s.type)
+    elseif isa(s.type,QuarkSmearing.Type)
+        print(io,"Quark Smering: ",s.type,", niter: ",s.niter,", eps: ",s.eps)
+    elseif isa(s.type,GluonicSmearing.Type) && s.type == GluonicSmearing.Local
+        print(io,"Gluonic Smering: ",s.type)
+    elseif isa(s.type,GluonicSmearing.Type)
+        print(io,"Gluonic Smering: ",s.type,", niter: ",s.niter,", eps: ",s.eps)
+    end
+end
+
+function Base.show(io::IO, c::CorrHeader)
+    println(io,"kappa: ",c.k,". ")
+    println(io,"mu: ",c.mu,". ")
+    println(io,"dp: ", c.dp,". ")
+    println(io,"theta: ",c.theta[1],", ",c.theta[2],". ")
+    println(io,c.q[1],", ",c.q[2],", ")
+    println(io,c.g[1],", ",c.g[2],", ")
+    println(io,"type: ",c.type,", ")
+    print(io,"source: ", c.x0,", ")
 end
 
 function show(io::IO, c::CorrData)
