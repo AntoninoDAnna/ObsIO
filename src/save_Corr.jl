@@ -267,8 +267,8 @@ function read_corr(ens;rootdir::String = datadir(),
         error("No file exist under these conditions")
     end
     if length(files) == 1
-        return read_corr_ALPHA(joinpath(dirname,files[1]))
+        return _read_corr(joinpath(dirname,files[1]))
     else
-        return read_corr_ALPHA.(joinpath.(dirname,files))
+        return [_read_corr(joinpath(dirname,f)) for f in files]
     end
 end
