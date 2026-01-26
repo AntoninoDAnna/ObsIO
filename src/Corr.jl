@@ -92,35 +92,35 @@ end
 
 return a tuple containing the hopping parameters of the propagator
 """
-kappa(c::Corr{N}) where N = ntuple(x->c.propagator[x].k, N)
+kappa(c::Corr{N}) where N = ntuple(x->c.propagators[x].k, N)
 
 @doc raw"""
      mu(c::Corr{N}) where N
 
 return a tuple containing the twisted masses of the propagator
 """
-mu(c::Corr{N}) where N = ntuple(x->c.propagator[x].mu, N)
+mu(c::Corr{N}) where N = ntuple(x->c.propagators[x].mu, N)
 
 @doc raw"""
      theta(c::Corr{N}) where N
 
 return a tuple containing the theta boundary conditions of the propagator
 """
-theta(c::Corr{N}) where N = ntuple(x->c.propagator[x].theta, N)
+theta(c::Corr{N}) where N = ntuple(x->c.propagators[x].theta, N)
 
 @doc raw"""
      src(c::Corr{N}) where N
 
 return the source position in lattice units. Equivalent to `c.point[1].x0`
 """
-src(c::Corr{N}) where N = c.point[1].x0
+src(c::Corr{N}) where N = c.points[1].x0
 
 @doc raw"""
      src(c::Corr{N}) where N
 
 return the source position in lattice units. Equivalent to `c.point[end].x0`
 """
-snk(c::Corr{N}) where N = c.point[end].x0
+snk(c::Corr{N}) where N = c.points[end].x0
 
 @doc raw"""
      src(c::Corr{N}) where N
