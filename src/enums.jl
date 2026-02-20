@@ -22,6 +22,7 @@ parse(T::Type{Gamma},s::AbstractString) = __to_gamma__[s]
     Z4
 end
 
+
 """
     @enumclass QuarkSmearing::Int32  Local Wuppertal GradientFlow3D GradientFlow None
 
@@ -39,6 +40,7 @@ end
 __to_qs__ = Dict(string(qs)=>qs for qs in instances(QuarkSmearing.Type))
 
 parse(T::Type{QuarkSmearing.Type},s::AbstractString) = __to_qs__[s]
+
 
 """
         @enumclass GluonicSmearing::Int32 Local APE WilsonFlow3D Quark3DGradientFlow QuarkGradientFlow None

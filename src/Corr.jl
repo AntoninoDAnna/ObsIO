@@ -123,7 +123,7 @@ return the source position in lattice units. Equivalent to `c.point[end].x0`
 snk(c::Corr{N}) where N = c.points[end].x0
 
 @doc raw"""
-     src(c::Corr{N}) where N
+     ts(c::Corr{N}) where N
 
 return the source-sink distance in lattice. assume that `N ⪩ 3`
     """

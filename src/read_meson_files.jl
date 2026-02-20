@@ -1,5 +1,11 @@
 using Statistics, ADerrors
 
+@doc raw"""
+     read_GlobalHeader(path::String)::GlobalHeader
+
+safely read a global header from a meson.dat.
+See also [`GlobalHeader`](@ref)
+"""
 function read_GlobalHeader(path::String)::GlobalHeader
     data =   open(path, "r")
     gh =  zeros(Int32, 4)
@@ -8,13 +14,26 @@ function read_GlobalHeader(path::String)::GlobalHeader
     return GlobalHeader(gh)
 end
 
+@doc raw"""
+     __read_GlobalHeader(file)::GlobalHeader
+
+read a global header from an already open meson.dat.
+It assumes `file` is in the correct state
+See also [`GlobalHeader`](@ref)
+"""
 function __read_GlobalHeader(file)::GlobalHeader
     gh = zeros(Int32,4)
     read!(file, gh)
     return GlobalHeader(gh)
 end
 
-function __read_legacy_CorrHeader!(ch,file)::Nothing
+@doc raw"""
+     __read_legacy_CorrHeader!(ch::AbstractVector{CorrHeader},file)
+
+update `ch` with `CorrHeader` object. It assume `file` is already open and in the correct state and that it is a "legacy" file
+See also [`CorrHeader`](@ref)
+"""
+function __read_legacy_CorrHeader!(ch::AbstractVector{CorrHeader},file)::Nothing
     aux_f = zeros(Float64, 4)
     aux_i = zeros(Int32, 4)
     @inbounds for k in eachindex(ch)
@@ -24,6 +43,12 @@ function __read_legacy_CorrHeader!(ch,file)::Nothing
     end
 end
 
+@doc raw"""
+     __read_Qsmearing(file)
+
+Return a `Smearing{QuarkSmearing.Type}` with the information stored in `file`. `file` is assumed to be in the correct state
+See also [`QuarkSmearing`](@ref)
+"""
 function __read_Qsmearing(file)::Smearing{QuarkSmearing.Type}
     qs = read(file,Int32) |> QuarkSmearing.Type
     qs == QuarkSmearing.Local && (return Smearing(qs))
@@ -32,6 +57,13 @@ function __read_Qsmearing(file)::Smearing{QuarkSmearing.Type}
     return Smearing(qs,n,eps)
 end
 
+@doc raw"""
+     __read_Gsmearing(file,qs::Smearing{QuarkSmearing.Type})
+
+Return a `Smearing{GluonicSmearing.Type}` with the information stored in `file`. `file` is assumed to be in the correct state.
+For some type of Smearing, the informations are taken from `qs`
+See also [`GluonicSmeaing`](@ref) [`QuarkSmearing`](@ref)
+"""
 function __read_Gsmearing(file,qs::Smearing{QuarkSmearing.Type})::Smearing{GluonicSmearing.Type}
     gs = read(file,Int32) |> GluonicSmearing.Type
     gs == GluonicSmearing.Local && (return Smearing(gs))
@@ -44,7 +76,13 @@ function __read_Gsmearing(file,qs::Smearing{QuarkSmearing.Type})::Smearing{Gluon
     return Smearing(gs,n,eps)
 end
 
-function __read_CorrHeader!(ch,file)::Nothing
+@doc raw"""
+     __read_corrHeader!(ch::AbstractVector{CorrHeader},file)
+
+update `ch` with `CorrHeader` object. It assume `file` is already open and in the correct state.
+See also [`CorrHeader`](@ref)
+"""
+function __read_CorrHeader!(ch::AbstractVector{CorrHeader},file)::Nothing
     aux_f = zeros(Float64, 6)
     aux_i = zeros(Int32, 4)
     theta = zeros(Float64, 6)
@@ -60,7 +98,13 @@ function __read_CorrHeader!(ch,file)::Nothing
     end
 end
 
-function read_CorrHeader(path::String; legacy::Bool=false)
+@doc raw"""
+     read_CorrHeader(path::String; legacy::Bool=false)::Vector{CorrHeader}
+
+Safely read the correlators header in `path`, a meson.dat file.
+See also [`CorrHeader`](@ref)
+"""
+function read_CorrHeader(path::String; legacy::Bool=false)::Vector{CorrHeader}
     data = open(path, "r")
     gh = __read_GlobalHeader(data)
     a = Vector{CorrHeader}(undef, gh.ncorr)
@@ -69,24 +113,54 @@ function read_CorrHeader(path::String; legacy::Bool=false)
     return a
 end
 
-function __find_match(ch,g1::Gamma,g2::Gamma)
+@doc raw"""
+     __find_match(ch::AbstractArray{CorrHeader},gsrc::Gamma,gsnk::Gamma)       (1)
+     __find_match(ch::AbstractArray{CorrHeader},gamma::NTuple{2,Gamma}...) (2)
+
+given an array of `CorrHeader`, return the indices `I` such that `ch[I]` contains the correlator with the gamma structure specified
+In (1), `gsrc` or `gsnk` can be `None`, and will match any gama structure. In (2), each NTuple contain `2` gamma structure, that cannot be `None`.
+
+(1) should be preferred when interested in one gamma structure at `sink` and/or  `src`.
+(2) shoudl be preferred when different gamma structure `(gsrc,gsnk)` are needed.
+
+See also [`CorrHeader`](@ref), [`Gamma`](@ref)
+
+## Example
+
+julia```
+   ch = read_CorrHeader(path)
+   I1 = __find_match(ch,G5,G5) ## all the G5-G5 correlators
+   I2a = __find_match(ch,G5,None) ## all the G5-Γ correlators
+   I2b = __find_match(ch,None,G5) ## all the Γ-G5 correlators
+   I3 = __find_match(ch,(G5,G5)) ## equal to I1, but slower
+   I4 = __find_match(ch,(G1,G1),(G2,G2),(G3,G3)) ## all the Gi-Gi correlators.
+```
+"""
+function __find_match(ch::AbstractArray{CorrHeader},g1::Gamma,g2::Gamma)
     function f(x)
         return (x.type[1] == g1 || g1 ==None) &&  (x.type[2] == g2 || g2==None)
     end
     findall(f,ch)
 end
 
-function __find_match(ch,gamma::NTuple{2,Gamma}...)
+function __find_match(ch::AbstractArray{CorrHeader},gamma::NTuple{2,Gamma}...)
     function f(x)
         return x.type in gamma
     end
     findall(f,ch)
 end
 
+@doc raw"""
+     __read_mesons(path,gh::GloabalHeader,ch::AbstractVector{CorrHeader},requested::AbstractVector{Int64}; nnoise_truc = nothing, legacy = false, id, correction = false)::Vector{CorrData}
+
+Reads a meson.dat file, given a `gh`,`ch` and a vector of indices such that `ch[requested]` are the requested correlators.
+The keyword parameter `id` is expected. If `correction` is `true` then the meson file is expected to contains correction data for a Truncated Solver Method.
+
+"""
 function __read_mesons(path,gh,ch,match;
-                      nnoise_trunc=false,
-                      legacy=false,
-                      id,
+                      nnoise_trunc=nothing,
+                      legacy::Bool=false,
+                      id::String,
                       correction::Bool = false)
     ncorr = gh.ncorr
     tvals = gh.tvals
@@ -110,7 +184,7 @@ function __read_mesons(path,gh,ch,match;
             c,sgn=1,+1 ## if correction, at div(ncorr,2) it changes to -
             @inbounds for k = 1:ncorr
                 if !(k in match)
-                    seek(data, position(data)  + ch[k].dsize*tvals*nnoise)
+                    seek(data, position(data)  + ch[k].dsize*tvas*nnoise)
                     continue
                 end
                 if ch[k].is_real
@@ -149,55 +223,44 @@ function get_id(path,id)
 end
 
 @doc raw"""
+     read_mesons(path::String,gsrc::Gamma=None,gsrc::Gamma=None; id=nothing, legacy::Bool = false, nnoise_trunc = nothing,correction::Bool=false)::Vector{CorrData}
+     read_mesons(path::String,gamma::NTuple{2,Gamma}...; id=nothing, legacy::Bool = false, nnoise_trunc = nothing,correction::Bool=false)::Vector{CorrData}
+     read_mesons(path::AbstractVector{String}, p...;k... )::Vector{CorrData}
 
-    read_mesons(path::String, g1::Union{String, Nothing}=nothing, g2::Union{String, Nothing}=nothing; id::Union{String, Nothing}=nothing, legacy::Bool=false)
-
-    read_mesons(path::Vector{String}, g1::Union{String, Nothing}=nothing, g2::Union{String, Nothing}=nothing; id::Union{String, Nothing}=nothing, legacy::Bool=false)
-
-This function read a mesons dat file at a given path and returns a vector of `CData` structures for different masses and Dirac structures.
-Dirac structures `g1` (source) and/or `g2` (sink) can be passed as string arguments in order to filter correaltors.
-ADerrors id can be specified as argument. If is not specified, the `id` is fixed according to the ensemble name (example: "H400"-> id = "H400")
-
-*For the old version (without smearing, distance preconditioning and theta) set legacy=true.
-
-Examples:
-```@example
-read_mesons(path)
-read_mesons(path, "G5")
-read_mesons(path, nothing, "G5")
-read_mesons(path, "G5", "G5")
-read_mesons(path, "G5", "G5", id="H100")
-
-```
-    """
+It reads the correlators saved in a meson.dat file. It returns a `Vector{CorrData}`. The gamma structures at source and/or sink either by specifying
+`gsrc` and `gsnk` or by givin a list of `Tuple` as `(gsrc,gsnk)` couple. `legacy::Bool` must be set to true if the data file is a legacy file,
+`nnoise_trunc` expect and `Integer` number that indicate the number of noise sources that are requested.
+"""
 function read_mesons(path::String,
-                     g1::Gamma = None,
-                     g2::Gamma = None;
+                     gsrc::Gamma = None,
+                     gsnk::Gamma = None;
                      id = nothing,
-                     legacy = false,
-                     nnoise_trunc = nothing)
+                     legacy::Bool = false,
+                     nnoise_trunc = nothing,
+                     correction::Bool=false)::Vector{CorrData}
     id = get_id(path,id)
     gh = read_GlobalHeader(path)
     c_header = read_CorrHeader(path, legacy=legacy)
-    corr_match = __find_match(c_header,g1,g2)
-    return  __read_mesons(path,g_header,c_header,corr_match,
-                         nnoise_trunc = nnoise_trunc, legacy=legacy,id=id)
+    corr_match = __find_match(c_header,gsrc,gsnk)
+    return  __read_mesons(path,gh,c_header,corr_match,
+                         nnoise_trunc = nnoise_trunc, legacy=legacy,id=id,correction=correction)
 end
 
 function read_mesons(path::String,
                      gamma::NTuple{2,Gamma}...;
                      id = nothing,
                      legacy = false,
-                     nnoise_trunc = nothing)
+                     nnoise_trunc = nothing,
+                     correction::Bool=false)::Vector{CorrData}
     id = get_id(path,id)
     g_header = read_GlobalHeader(path)
     c_header = read_CorrHeader(path, legacy=legacy)
     corr_match = __find_match(c_header,gamma...)
     return __read_mesons(path,g_header,c_header,corr_match,
-                         nnoise_trunc = nnoise_trunc, legacy=legacy,id=id)
+                         nnoise_trunc = nnoise_trunc, legacy=legacy,id=id,correction=false)
 end
 
-function read_mesons(path::AbstractVector{String}, p...;k... )
+function read_mesons(path::AbstractVector{String}, p...;k... )::Vector{CorrData}
     res = [read_mesons(_path,p...;k...) for _path in path]
     nrep = length(res)
     ncorr = length(res[1])
@@ -211,50 +274,14 @@ function read_mesons(path::AbstractVector{String}, p...;k... )
     return cdata
 end
 
-function read_mesons_correction(path::String,
-                                g1::Gamma = None,
-                                g2::Gamma = None;
-                                id = nothing,
-                                legacy = false,
-                                nnoise_trunc = nothing)
-    id = get_id(path,id)
-    g_header = read_GlobalHeader(path)
-    c_header = read_CorrHeader(path, legacy=legacy)
-    match = __find_match(c_header,g1,g2)
-    return __read_mesons(path,g_header,c_header,match,id=id,nnoise_trunc=nnoise_trunc,
-                        legacy=legacy,correction=true)
-end
+@doc raw"""
+     read_meson_by_chunk(path::Vector{String},gamma...;nconf = length(path),id=nothing,legacy=false, nnoise_trunc=nothing,correction::Bool=false)::Vector{CorrData}
 
-function read_mesons_correction(path::String,
-                                gamma::NTuple{2,Gamma}...;
-                                id = nothing,
-                                legacy = false,
-                                nnoise_trunc = nothing)
-    id = get_id(path,id)
-    g_header = read_GlobalHeader(path)
-    c_header = read_CorrHeader(path, legacy=legacy)
-    match = __find_match(c_header,gamma...)
-    return __read_mesons(path,g_header,c_header,match,id=id,nnoise_trunc=nnoise_trunc,
-                        legacy=legacy,correction=true)
-end
-
-function read_mesons_correction(path::Vector{String}, p...;k... )
-    res = [read_mesons_correction(_path,p...;k...) for _path in path]
-    nrep = length(res)
-    ncorr = length(res[1])
-    cdata = Vector{Vector{CorrData}}(undef, ncorr)
-    for icorr = 1:ncorr
-        cdata[icorr] = Vector{CData}(undef, nrep)
-        for r = 1:nrep
-            cdata[icorr][r] = res[r][icorr]
-        end
-    end
-    return cdata
-end
-
-function read_mesons_by_conf(path::Vector{String},gamma...;
-                            nconf = length(path),
-                            id=nothing, legacy=false, nnoise_trunc=nothing)
+It reads the meson files in `path` and combined them. Accept the same parameters as `read_meson`. `nconf` specify the total number of configuration expected.
+"""
+function read_mesons_by_chunk(path::Vector{String},gamma...;
+                              nconf = length(path),
+                              id=nothing, legacy=false, nnoise_trunc=nothing,correction = false)::Vector{CorrData}
     id = get_id(path[1],id)
     gh = read_GlobalHeader(path[1])
     ch = read_CorrHeader(path[1])
@@ -263,7 +290,7 @@ function read_mesons_by_conf(path::Vector{String},gamma...;
     res = [CorrData(ch[i],nconf,gh.tvals,id) for i in eachindex(match)]
     for p in path
         _r = __read_mesons(p,gh,ch,match,id=id,legacy=legacy,
-                                nnoise_trunc=nnoise_trunc)
+                                nnoise_trunc=nnoise_trunc,correction=false)
         for i in eachindex(_r)
             for cdx in eachindex(_r[i].vcfg)
                 res[i].re_data[_r[i].vcfg[cdx],:] .= _r[i].re_data[cdx,:]
@@ -456,7 +483,7 @@ function read_rw(path::String; v::String="1.2")
 end
 
 @doc raw"""
-read_rw_openQCD2(path::String; print_info::Bool=false)
+     read_rw_openQCD2(path::String; print_info::Bool=false)
 
 This function reads the reweighting factors generated with openQCD version 2.#.
 The flag print_info if set to true print additional information for debugging
