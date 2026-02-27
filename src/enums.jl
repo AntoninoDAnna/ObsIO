@@ -12,7 +12,7 @@ __to_gamma__ = Dict(string(g) => g for g in instances(Gamma))
 __to_gamma__["1"] = Id
 
 import Base:parse
-parse(T::Type{Gamma},s::AbstractString) = __to_gamma__[s]
+Base.parse(T::Type{Gamma},s::AbstractString) = __to_gamma__[s]
 
 
 @enumclass Noise::Int32 begin
@@ -39,7 +39,7 @@ end
 
 __to_qs__ = Dict(string(qs)=>qs for qs in instances(QuarkSmearing.Type))
 
-parse(T::Type{QuarkSmearing.Type},s::AbstractString) = __to_qs__[s]
+Base.parse(T::Type{QuarkSmearing.Type},s::AbstractString) = __to_qs__[s]
 
 
 """
@@ -59,4 +59,4 @@ end
 
 __to_gs__ = Dict(string(gs)=>gs for gs in instances(GluonicSmearing.Type))
 
-parse(T::Type{GluonicSmearing.Type},s::AbstractString) = __to_gs__[s]
+Base.parse(T::Type{GluonicSmearing.Type},s::AbstractString) = __to_gs__[s]

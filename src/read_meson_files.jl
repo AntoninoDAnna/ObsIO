@@ -444,7 +444,6 @@ function corr_obs(cdata::AbstractVector{CorrData}, corr;
     end
 end
 
-
 function read_rw(path::String; v::String="1.2")
     data = open(path, "r")
     nrw = read(data, Int32)
@@ -630,7 +629,6 @@ function concat_data!(data1::Vector{Vector{CorrData}}, data2::Vector{Vector{Corr
             data1[k][r].vcfg = data1[k][r].vcfg[idx]
             data1[k][r].re_data = data1[k][r].re_data[idx, :]
             data1[k][r].im_data = data1[k][r].im_data[idx, :]
-
         end
     end
     return nothing

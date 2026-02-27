@@ -130,6 +130,7 @@ return the source-sink distance in lattice. assume that `N ⪩ 3`
 ts(c::Corr{N}) where N = snk(c) - src(c)
 
 
+
 @doc raw"""
      __update__(p::Point;k...)
      __update__(p::Propagator;k...)
@@ -281,7 +282,7 @@ function Base.show(io::IO, c::CorrHeader)
     print(io,"source: ", c.x0,", ")
 end
 
-function show(io::IO, c::CorrData)
+function Base.show(io::IO, c::CorrData)
     println(io, "Correlator data. Ensemble ",c.id)
     println(io, "Configuration length ", c.vcfg)
     println(io, c.header)
@@ -294,7 +295,7 @@ function show_customized_propagator(io::IO, p::Propagator,label::Vector{<:Abstra
     print(io,tab,"propagate from ", f(p.src)," to ",f(p.snk))
 end
 
-function show(io::IO,c::Corr{N} where N)
+function Base.show(io::IO,c::Corr{N} where N)
     N = length(c.points)
     println(io, "$(N)-point correlator")
     println(io,"Points:")
@@ -309,12 +310,12 @@ function show(io::IO,c::Corr{N} where N)
     end
 end
 
-function show(io::IO,p::Point)
+function Base.show(io::IO,p::Point)
     print(io,"gamma = ", p.gamma, ",\tx0 = ", p.x0)
     print(io,",\tquark smering = ",p.qsmearing,",\tgluonic smearing = ",p.gsmearing)
 end
 
-function show(io::IO,p::Propagator)
+function Base.show(io::IO,p::Propagator)
     print(io, "kappa = ", p.k," ")
     print(io, "mu = ", p.mu, " ")
     print(io, "pF = ", p.pF, " ")
