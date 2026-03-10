@@ -1,12 +1,17 @@
 using EnumClasses
 
 @doc raw"""
-     @enum Gamma G0 G1 G2 G3 None G5 Id G0G1 G0G2 G0G3 G0G5 G1G2 G1G3 G1G5 G2G3 G2G5 G3G5
+     @enum Gamma G0 G1 G2 G3 None G5 Id G0G1 G0G2 G0G3 G0G5 G1G2 G1G3 G1G5 G2G3 G2G5 G3G5 Gi G0Gi GiGj GiG5
 
 Enum list of Dirac's Gamma matrices. `None` take the place of `G4` for backward compatability.
+`Gi`, `G0Gi`, `GiG5` indicate that an average along the spatial direction have been taken.
+
+For example, a `Corr{2}` that is the average of three `Corr{2}` with gamma structure `G1_G1`,
+`G2_G2` and `G3_G3` will have the gamma structure `Gi_Gi`.
 
 """
-@enum Gamma G0 G1 G2 G3 None G5 Id G0G1 G0G2 G0G3 G0G5 G1G2 G1G3 G1G5 G2G3 G2G5 G3G5
+
+@enum Gamma G0 G1 G2 G3 None G5 Id G0G1 G0G2 G0G3 G0G5 G1G2 G1G3 G1G5 G2G3 G2G5 G3G5 Gi G0Gi GiGj GiG5
 
 __to_gamma__ = Dict(string(g) => g for g in instances(Gamma))
 __to_gamma__["1"] = Id
