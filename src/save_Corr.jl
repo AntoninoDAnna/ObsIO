@@ -138,12 +138,11 @@ end
 
 function read_fit(path,get_extra = true)
     if !get_extra
-        aux = read_data(par)
+        aux = read_data(path)
         return [NamedTuple(:par,aux[i]) for i in eachindex(aux)]
     end
-    aux = read_data(path,get_extra=true)
+    aux,extra = read_data(path,get_extra=true)
     fit = Vector{NamedTuple}(undef, length(aux))
-    extra::Dict = aux[1][2]
     extra["par"] = getfield.(aux,1)
     for i in eachindex(aux)
         fit[i] =NamedTuple((Symbol(key),value[i]) for (key,value) in extra)
