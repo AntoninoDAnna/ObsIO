@@ -184,7 +184,7 @@ function __read_mesons(path,gh,ch,match;
             c,sgn=1,+1 ## if correction, at div(ncorr,2) it changes to -
             @inbounds for k = 1:ncorr
                 if !(k in match)
-                    seek(data, position(data)  + ch[k].dsize*tvas*nnoise)
+                    seek(data, position(data)  + ch[k].dsize*tvals*nnoise)
                     continue
                 end
                 if ch[k].is_real
