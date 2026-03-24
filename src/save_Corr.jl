@@ -142,12 +142,18 @@ function read_fit(path,get_extra = true)
         return [NamedTuple(:par,aux[i]) for i in eachindex(aux)]
     end
     aux,extra = read_data(path,get_extra=true)
-    fit = Vector{NamedTuple}(undef, length(aux))
-    extra["par"] = getfield.(aux,1)
-    for i in eachindex(aux)
+    nfits = unique(length(v) for (_,v) in extra)
+    if length(nfits) == 1
+        nfits = nfits[1]
+    else
+        @warn "wat?"
+    end
+    fit = Vector{NamedTuple}(undef,nfits)
+    extra["par"] = aux
+    for i in eachindex(fit)
         fit[i] =NamedTuple((Symbol(key),value[i]) for (key,value) in extra)
     end
-    return fit
+    return nfits == 1 ? fit[1] : fit
 end
 
 point_to_dict(p::Point) =  Dict(
