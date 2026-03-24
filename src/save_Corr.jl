@@ -149,7 +149,7 @@ function read_fit(path,get_extra = true)
         @warn "wat?"
     end
     fit = Vector{NamedTuple}(undef,nfits)
-    extra["par"] = aux
+    extra["par"] = [aux]
     for i in eachindex(fit)
         fit[i] =NamedTuple((Symbol(key),value[i]) for (key,value) in extra)
     end
