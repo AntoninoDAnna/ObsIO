@@ -281,13 +281,13 @@ It reads the meson files in `path` and combined them. Accept the same parameters
 """
 function read_mesons_by_chunk(path::Vector{String},gamma...;
                               nconf = length(path),
-                              id=nothing, legacy=false, nnoise_trunc=nothing,correction = false)::Vector{CorrData}
+                              id=nothing, legacy=false, nnoise_trunc=nothing,correction = false)#::Vector{CorrData}
     id = get_id(path[1],id)
     gh = read_GlobalHeader(path[1])
     ch = read_CorrHeader(path[1])
     match = __find_match(ch,gamma...)
     Ncorr = length(match)
-    res = [CorrData(ch[i],nconf,gh.tvals,id) for i in eachindex(match)]
+    res = [CorrData(ch[m],nconf,gh.tvals,id) for m in match]
     for p in path
         _r = __read_mesons(p,gh,ch,match,id=id,legacy=legacy,
                                 nnoise_trunc=nnoise_trunc,correction=false)
