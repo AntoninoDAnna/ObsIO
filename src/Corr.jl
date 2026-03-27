@@ -129,6 +129,11 @@ return the source-sink distance in lattice. assume that `N ⪩ 3`
     """
 ts(c::Corr{N}) where N = snk(c) - src(c)
 
+@doc raw"""
+     gamma_struct(c::Corr{N}) where N
+
+return a `NTuple{N,Gamma}` with the correlator's gamma structures"""
+gamma_struct(c::Corr{N}) where N = ntuple(i->c.points[i].gamma,N)
 
 
 @doc raw"""
