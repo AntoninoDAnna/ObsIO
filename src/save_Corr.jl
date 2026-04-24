@@ -269,7 +269,7 @@ function read_corr(ens;rootdir::String = datadir(),
             aux->filter!(x->contains(x,aux),files)
     end
     if length(files) == 0
-        error("No file exist under these conditions")
+        error("No file exist under the conditions:\n kappa =  $(kappa) \n mu =$mu \n theta1 = $theta  \n theta2 = $theta2 \n label = $label \n set = $set")
     end
     if length(files) == 1
         return _read_corr(joinpath(dirname,files[1]))
