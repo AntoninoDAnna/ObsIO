@@ -1,5 +1,4 @@
 using BDIO, ALPHAio
-
 @doc raw"""
      open_data_file(path,mode; override=false, comment="")
 
@@ -65,7 +64,8 @@ save_data(a, fb; extra=nothing) = ALPHAdobs_write(fb,a,extra=extra)
 save_data(a;path::String,comment::AbstractString="", override::Bool=false,extra = nothing) = save_data(a,path,comment,override=override, extra=extra)
 
 
-function read_data(path::AbstractString; get_extra = false)
+function read_data(path::AbstractString; get_extra = false,
+                   read = ADerrors.read_uwreal)
     file =open_data_file(path,"r")
     res = Any[]
     while ALPHAdobs_next_p(file)
@@ -80,24 +80,24 @@ function read_data(path::AbstractString; get_extra = false)
             if dim == 0
                 data = uwreal[]
                 for i in 1:nobs
-                    push!(data,ALPHAdobs_read_next(file))
+                    push!(data,ObsIO_read_next(file,read=read))
                 end
             else
                 data = [ones(uwreal,size...) for _ in 1:nobs]
                 for n in 1:nobs, c in CartesianIndices(data[n])
-                    data[n][c] = ALPHAdobs_read_next(file)
+                    data[n][c] = ObsIO_read_next(file,read=read)
                 end
             end
         elseif type == "dict"
             keys = info["keys"]
             if dim ==0
-                data = [Dict{String,uwreal}(k=>ALPHAdobs_read_next(file)  for k in keys) for _ in 1:nobs]
+                data = [Dict{String,uwreal}(k=>ObsIO_read_next(file,read=read)  for k in keys) for _ in 1:nobs]
             else
                 data = [Dict{String,Array{uwreal,dim}}() for _ in 1:nobs]
                 for n in 1:nobs, k in keys
                     data[n][k] = ones(uwreal,size...)
                     for c in CartesianIndices(data[n][k])
-                        data[n][k][c] = ALPHAdobs_read_next(file)
+                        data[n][k][c] = ObsIO_read_next(file,read=read)
                     end
                 end
             end
