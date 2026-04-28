@@ -268,6 +268,7 @@ function read_corr(ens;rootdir::String = datadir(),
         join([txt;string.(spec)],"_") |>
             aux->filter!(x->contains(x,aux),files)
     end
+    filter!(x->!endswith(x,'~'),files)
     if length(files) == 0
         error("No file exist under the conditions:\n kappa =  $(kappa) \n mu =$mu \n theta1 = $theta  \n theta2 = $theta2 \n label = $label \n set = $set")
     end
