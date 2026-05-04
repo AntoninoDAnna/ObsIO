@@ -163,10 +163,21 @@ function read_input_file(path)
             corrs = Vector{Corr}(undef,ncorr)
         elseif contains(head.match,"Propagator")
             idx = match(r"[0-9]+",head.match) |> x->parse(Int64,x.match) + 1
-            props[idx] = read_propagator(file)
+            if idx <=length(props)
+                props[idx] = read_propagator(file)
+            else
+                @warn "In input file there are more propagators that expected"
+                push!(props[idx],read_propagator(file))
+            end
+
         elseif contains(head.match,"Correlator")
             idx = match(r"[0-9]+",head.match)|> x->parse(Int64,x.match) + 1
-            corrs[idx] = read_correlator(file,props)
+            if idx <=length(corrs)
+                corrs[idx] = read_correlator(file,props)
+            else
+                @warn "In input file there are more correlators that expected"
+                push!(corrs,read_correlator(file,props))
+            end
         end
     end
     close(file)
