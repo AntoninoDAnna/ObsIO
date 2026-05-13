@@ -247,9 +247,9 @@ function _read_corr(path)
 end
 
 function read_corr(ens;rootdir::String = datadir(),
-                   subdir::Union{String,Nothing}=nothing,
-                   label::Union{String,Nothing}=nothing,
-                   set::Union{String,Nothing}=nothing,
+                   subdir::Union{String,Regex,Nothing}=nothing,
+                   label::Union{String,Regex,Nothing}=nothing,
+                   set::Union{String,Regex,Nothing}=nothing,
                    theta1::Union{Vector{Float64},Float64} = Float64[],
                    theta2::Union{Vector{Float64},Float64} = Float64[],
                    kappa::AbstractArray{Float64} = Float64[],
