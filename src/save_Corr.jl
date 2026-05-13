@@ -113,49 +113,6 @@ function read_data(path::AbstractString; get_extra = false,
     return length(res) ==1 ?  res[1] : res
 end
 
-function save_fit(fit::NamedTuple, path,comment, override=false)
-    if !haskey(fit,:par)
-        throw(ArgumentError(":par field is missing from fit"))
-    end
-    _keys = [keys(fit)...] |>x->x[x.!=:par];
-    par = getfield(fit,:par)
-    extra = Dict(String(k) => getfield(fit,k) for k in _keys)
-    save_data(par,path,comment,override=override,extra=extra)
-end
-
-function save_fit(fit::T where{T<:AbstractArray{<:NamedTuple}},path,comment,override=false)
-    if !all(haskey.(fit,:par))
-        throw(ArgumentError(":par field is missing from fit"))
-    end
-    _keys = keys.(fit) |> x->union([xx for xx in x]...) |> x->filter!(y->y!=:par,x)
-    par = getfield.(fit,:par)
-    extra = Dict()
-    for k in _keys
-        extra[String(k)] = [haskey(f,k) ? getfield(f,k) : zeros(Float64) for f in fit]
-    end
-    save_data(par,path,comment,override=override,extra=extra)
-end
-
-function read_fit(path,get_extra = true)
-    if !get_extra
-        aux = read_data(path)
-        return [NamedTuple(:par,aux[i]) for i in eachindex(aux)]
-    end
-    aux,extra = read_data(path,get_extra=true)
-    nfits = unique(length(v) for (_,v) in extra)
-    if length(nfits) == 1
-        nfits = nfits[1]
-    else
-        @warn "wat?"
-    end
-    fit = Vector{NamedTuple}(undef,nfits)
-    extra["par"] = [aux]
-    for i in eachindex(fit)
-        fit[i] =NamedTuple((Symbol(key),value[i]) for (key,value) in extra)
-    end
-    return nfits == 1 ? fit[1] : fit
-end
-
 point_to_dict(p::Point) =  Dict(
     "gamma"     => string(p.gamma),
     "x0"        => ismissing(p.x0) ? "moving" : p.x0,
