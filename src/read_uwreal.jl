@@ -25,33 +25,46 @@ ObsIO_read_uwreal(fb); #same ad read
 function ObsIO_read_uwreal(fb,ws::ADerrors.wspace,mapsids::Dict{Int64,Int64},
                         mapstrids::Dict{String,String},
                         mapvrep::Dict{String,Vector{Int64}})
-    ## variable to temporary read data:
-    dfoo = zeros(Float64,1)
-    ifoo = zeros(Int32,1)
-    mean::Float64, nid::Int32 = let
-        BDIO.BDIO_read(fb,dfoo)
-        BDIO.BDIO_read(fb,ifoo)
-        dfoo[1], ifoo[1]
+    mean::Float64 = let
+        foo = zeros(Float64,1)
+        BDIO.BDIO_read(fb,foo)
+        foo[1]
     end
+
+    nid::Int32 = let
+        ifoo = zeros(Int32,1)
+        BDIO.BDIO_read(fb,ifoo)
+        ifoo[1]
+    end
+
+    ## if p[i] == true, then this uwreal depends on obs[j] depend
     p = [false for i in 1:ws.nob+nid]
     p[ws.nob+1:end] .= true
+
     d = zeros(Float64,ws.nob+nid)
     d[ws.nob+1:end] .=1.0
+
     nds = zeros(Int32,nid)
     BDIO.BDIO_read(fb,nds)
+
     nrep = zeros(Int32, nid)
     BDIO.BDIO_read(fb, nrep)
+
     ivrep = zeros(Int32, sum(nrep))
     BDIO.BDIO_read(fb, ivrep)
+
     ids  = zeros(Int32, nid)
     BDIO.BDIO_read(fb, ids)
+
     dfl= zeros(Float64,nid)
+
     itmp = zeros(Int32,nid)
     BDIO.BDIO_read(fb,itmp)
     for i in 1:2
       BDIO.BDIO_read(fb,dfl)
     end
     dfl =Vector{Vector{Float64}}(undef,nid)
+
     is =1
     for i in 1:nid
        ie = is + nrep[i] - 1
@@ -62,6 +75,7 @@ function ObsIO_read_uwreal(fb,ws::ADerrors.wspace,mapsids::Dict{Int64,Int64},
         BDIO.BDIO_read(fb, dfl[i])
         is = ie + 1
     end
+
     ids_obs = Vector{Int64}(undef,nid)
     id2str = Dict{Int64,String}();
     if BDIO.BDIO_eor(fb)
@@ -76,13 +90,13 @@ function ObsIO_read_uwreal(fb,ws::ADerrors.wspace,mapsids::Dict{Int64,Int64},
         is = 1
         for i in 1:nid
             ie = is + nrep[i] - 1
+            ifoo = zeros(Int32,1)
             BDIO.BDIO_read(fb, ifoo)
             str = BDIO.BDIO_read_str(fb)
             id2str[ids[i]] = str ## keep track of the id *inside* the record
             str = get(mapstrids,str,str)
             # Add the string id we want in the database
             ids_obs[i] = ADerrors.get_id_from_name(str, ws)
-
         end
         is=1
     end
@@ -115,52 +129,75 @@ function ObsIO_read_uwreal(fb,ws::ADerrors.wspace,mapsids::Dict{Int64,Int64},
                 iso = ieo+1
             end
         end
-        # add_DB, with do_maps=false, add the data to the workspace without mapping it to any id, hence, this id is not stored at this point.
         ADerrors.add_DB(ndfl, ids_obs[i], newvrep, ws, true)
         is = ie + 1
     end
+
     # Here not to use ids[i]
     if BDIO.BDIO_eor(fb)
         is = 1
         for i in 1:nid
             ie = is + nrep[i] - 1
-            v = Vector{String}(undef, nrep[i])
-            idc = Vector{Int32}(undef, nds[i])
+            flag = haskey(mapvrep,id2str[ids[i]])
+            _ivrep = flag ? mapvrep[id2str[ids[i]]] : ivrep[is:ie]
+            _nrep = flag  ? length(_ivrep) : nrep[i]
+            v = Vector{String}(undef, _nrep)
+            _nds = flag ? sum(_ivrep) : nds[i]
+            idc = Vector{Int32}(undef, _nds)
             str = ADerrors.get_name_from_id(convert(Int64, ids[i]), ws)
-            for j in 1:nrep[i]
+            for j in 1:_nrep
                 v[j] = str*"_r"*string(j-1)
             end
             iof = 0
-            for j in 1:nrep[i]
-                for k in 1:ivrep[is+j-1]
+            for j in 1:_nrep
+                for k in 1:_ivrep
                     idc[k+iof] = convert(Int32, k)
                 end
-                iof = iof + ivrep[is+j-1]
+                iof = iof + _ivrep[j]
             end
             ADerrors.add_repnames(convert(Int64, ids_obs[i]), ws, v, convert(Vector{Int64}, idc))
             is = ie + 1
         end
+
     else
+        is = 1
         for i in 1:nid
-            v = Vector{String}(undef, nrep[i])
-            idc = Vector{Int32}(undef, nds[i])
+            ie = is + nrep[i] - 1
+            flag = haskey(mapvrep,id2str[ids[i]])
+            _ivrep =flag ? mapvrep[id2str[ids[i]]] :  ivrep[is:ie]
+            _nrep = flag ? length(_ivrep) : nrep[i]
+            v = Vector{String}(undef, _nrep)
+            _nds = flag ? sum(_ivrep) : nds[i]
+            idc = Vector{Int32}(undef, _nds)
             ifoo = zeros(Int32,1)
             BDIO.BDIO_read(fb, ifoo)
-            for j in 1:nrep[i]
-                v[j] = BDIO.BDIO_read_str(fb)
-            end
+            has_newname = ifoo[1] != ids_obs[i]
+
             str = ADerrors.get_name_from_id(ids_obs[i],ws)
-            if ids_obs[i]!=ifoo[1]  #if true, ids is changing and repid need to reflect that
-                for j in 1:nrep[i]
-                    v[j] = str*"_r"*string(j-1)
+            for j in 1:_nrep
+                v[j] = j <=nrep[i] ? BDIO.BDIO_read_str(fb) : ""
+                if has_newname || j>nrep[i]
+                    v[j] = str * "_r" * string(j-1)
                 end
             end
             BDIO.BDIO_read(fb, idc)
+            if flag
+                if length(idc) != sum(_ivrep)
+                    idc = Vector{Int32}(undef, sum(_ivrep))
+                    isof = 1
+                    for _v  in _ivrep
+                        ieof = isof + _v -1
+                        idc[isof:ieof] .= 1:_v
+                        isof = ieof+1
+                    end
+                end
+            end
             if (length(idc) == 1)
                 ADerrors.add_repnames(convert(Int64, ids_obs[i]), ws, v, [1,2])
             else
                 ADerrors.add_repnames(convert(Int64, ids_obs[i]), ws, v, convert(Vector{Int64}, idc))
             end
+            is = ie+1
         end
     end
     return ADerrors.uwreal(mean, p, d)
