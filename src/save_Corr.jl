@@ -64,6 +64,16 @@ save_data(a, fb; extra=nothing) = ALPHAdobs_write(fb,a,extra=extra)
 save_data(a;path::String,comment::AbstractString="", override::Bool=false,extra = nothing) = save_data(a,path,comment,override=override, extra=extra)
 
 
+function get_extras(path)
+    file = open_data_file(path,"r")
+    extra = Vector{Dict{String,Any}}()
+    while ALPHAdobs_next_p(file)
+        info = ALPHAdobs_read_parameters(file)
+        push!(extra,get(info,"extra",nothing))
+    end
+    return length(extra[1])==1 ? extra[1] : extra
+end
+
 function read_data(path::AbstractString; get_extra = false,
                    read = ADerrors.read_uwreal)
     file =open_data_file(path,"r")
@@ -132,7 +142,7 @@ function prop_to_dict(p::Propagator)
     return d
 end
 """
-    function write_corr(C::juobs.Corr; folder=".",ens="ens",set::Union{String,Nothing}=nothing,label::Union{String,Nothing}=nothing,override::Bool=false)
+    function write_corr(C::Corr; folder=".",ens="ens",set::Union{String,Nothing}=nothing,label::Union{String,Nothing}=nothing,override::Bool=false)
 
 Generates a BDIO file with the correlator `C` using the ALPHA convention (DISCLAIMER: This used the ALPHAio package v0.4.0
 written by Alberto Ramos, and as of today the convention is not set to stone, so it may change in future)

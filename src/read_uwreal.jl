@@ -168,7 +168,7 @@ function ObsIO_read_uwreal(fb,ws::ADerrors.wspace,mapsids::Dict{Int64,Int64},
             _nrep = flag ? length(_ivrep) : nrep[i]
             v = Vector{String}(undef, _nrep)
             _nds = flag ? sum(_ivrep) : nds[i]
-            idc = Vector{Int32}(undef, _nds)
+            idc = Vector{Int32}(undef, nds[i])
             ifoo = zeros(Int32,1)
             BDIO.BDIO_read(fb, ifoo)
             has_newname = ifoo[1] != ids_obs[i]
