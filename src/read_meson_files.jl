@@ -302,7 +302,7 @@ function read_mesons_by_chunk(path::Vector{String},gamma...;
     res = [CorrData(ch[m],gh.tvals,id) for m in match]
     for p in path
         _r = __read_mesons(p,gh,ch,match,id=id,legacy=legacy,
-                            nnoise_trunc=nnoise_trunc, correction=false)
+                            nnoise_trunc=nnoise_trunc, correction=correction)
         concat_data!.(res,_r)
     end
     return res
@@ -736,10 +736,11 @@ end
 
 function concat_data!(dest::CorrData, data::CorrData...)
     dest.vcfg     = vcat(dest.vcfg,   getfield.(data,:vcfg)...)
-    dest.re_data  = vcat(dest.re_data,gefield.(data,:re_data)...)
-    dest.im_data  = vcat(dest.im_data,gefield.(data,:im_data)...)
-    aux = sortperm(data.vcfg)
+    dest.re_data  = vcat(dest.re_data,getfield.(data,:re_data)...)
+    dest.im_data  = vcat(dest.im_data,getfield.(data,:im_data)...)
+    aux = sortperm(dest.vcfg)
     dest.vcfg    = dest.vcfg[aux]
     dest.re_data = dest.re_data[aux,:]
     dest.im_data = dest.im_data[aux,:]
+    nothing
 end
