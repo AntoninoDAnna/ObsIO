@@ -64,6 +64,16 @@ save_data(a, fb; extra=nothing) = ALPHAdobs_write(fb,a,extra=extra)
 save_data(a;path::String,comment::AbstractString="", override::Bool=false,extra = nothing) = save_data(a,path,comment,override=override, extra=extra)
 
 
+function get_extras(path)
+    file = open_data_file(path,"r")
+    extra = Vector{Dict{String,Any}}()
+    while ALPHAdobs_next_p(file)
+        info = ALPHAdobs_read_parameters(file)
+        push!(extra,get(info,"extra",nothing))
+    end
+    return length(extra[1])==1 ? extra[1] : extra
+end
+
 function read_data(path::AbstractString; get_extra = false,
                    read = ADerrors.read_uwreal)
     file =open_data_file(path,"r")
@@ -113,49 +123,6 @@ function read_data(path::AbstractString; get_extra = false,
     return length(res) ==1 ?  res[1] : res
 end
 
-function save_fit(fit::NamedTuple, path,comment, override=false)
-    if !haskey(fit,:par)
-        throw(ArgumentError(":par field is missing from fit"))
-    end
-    _keys = [keys(fit)...] |>x->x[x.!=:par];
-    par = getfield(fit,:par)
-    extra = Dict(String(k) => getfield(fit,k) for k in _keys)
-    save_data(par,path,comment,override=override,extra=extra)
-end
-
-function save_fit(fit::T where{T<:AbstractArray{<:NamedTuple}},path,comment,override=false)
-    if !all(haskey.(fit,:par))
-        throw(ArgumentError(":par field is missing from fit"))
-    end
-    _keys = keys.(fit) |> x->union([xx for xx in x]...) |> x->filter!(y->y!=:par,x)
-    par = getfield.(fit,:par)
-    extra = Dict()
-    for k in _keys
-        extra[String(k)] = [haskey(f,k) ? getfield(f,k) : zeros(Float64) for f in fit]
-    end
-    save_data(par,path,comment,override=override,extra=extra)
-end
-
-function read_fit(path,get_extra = true)
-    if !get_extra
-        aux = read_data(path)
-        return [NamedTuple(:par,aux[i]) for i in eachindex(aux)]
-    end
-    aux,extra = read_data(path,get_extra=true)
-    nfits = unique(length(v) for (_,v) in extra)
-    if length(nfits) == 1
-        nfits = nfits[1]
-    else
-        @warn "wat?"
-    end
-    fit = Vector{NamedTuple}(undef,nfits)
-    extra["par"] = [aux]
-    for i in eachindex(fit)
-        fit[i] =NamedTuple((Symbol(key),value[i]) for (key,value) in extra)
-    end
-    return nfits == 1 ? fit[1] : fit
-end
-
 point_to_dict(p::Point) =  Dict(
     "gamma"     => string(p.gamma),
     "x0"        => ismissing(p.x0) ? "moving" : p.x0,
@@ -175,7 +142,7 @@ function prop_to_dict(p::Propagator)
     return d
 end
 """
-    function write_corr(C::juobs.Corr; folder=".",ens="ens",set::Union{String,Nothing}=nothing,label::Union{String,Nothing}=nothing,override::Bool=false)
+    function write_corr(C::Corr; folder=".",ens="ens",set::Union{String,Nothing}=nothing,label::Union{String,Nothing}=nothing,override::Bool=false)
 
 Generates a BDIO file with the correlator `C` using the ALPHA convention (DISCLAIMER: This used the ALPHAio package v0.4.0
 written by Alberto Ramos, and as of today the convention is not set to stone, so it may change in future)
@@ -249,9 +216,9 @@ function _read_corr(path)
 end
 
 function read_corr(ens;rootdir::String = datadir(),
-                   subdir::Union{String,Nothing}=nothing,
-                   label::Union{String,Nothing}=nothing,
-                   set::Union{String,Nothing}=nothing,
+                   subdir::Union{String,Regex,Nothing}=nothing,
+                   label::Union{String,Regex,Nothing}=nothing,
+                   set::Union{String,Regex,Nothing}=nothing,
                    theta1::Union{Vector{Float64},Float64} = Float64[],
                    theta2::Union{Vector{Float64},Float64} = Float64[],
                    kappa::AbstractArray{Float64} = Float64[],
