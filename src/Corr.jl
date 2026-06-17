@@ -1,4 +1,5 @@
 import Base:show
+import Base:(==)
 
 @doc raw"""
     struct Point
@@ -190,6 +191,17 @@ mutable struct Smearing{T<:EnumClass}
     Smearing(t::T, n, e,) where {T<:EnumClass} = new{T}(t, n, e)
 end
 
+function Base.:(==)(A::Smearing{T}, B::Smearing{T}) where {T<:EnumClass}
+    for f in fieldnames(Smearing{T})
+        println(f)
+        getfield(A,f) ==getfield(B,f) || return false
+    end
+    return true
+end
+
+Base.:(==)(A::Smearing{T}, B::Smearing{S}) where {T,S} = false
+
+
 @doc raw"""
      mutable struct CorrHeader
 
@@ -245,6 +257,13 @@ mutable struct CorrHeader
         a.dsize = 16 - 8* a.is_real
         return a
     end
+end
+
+function Base.:(==)(A::CorrHeader, B::CorrHeader)
+    for f in fieldnames(CorrHeader)
+        getfield(A,f) ==getfield(B,f) || return false
+    end
+    return true
 end
 
 @doc raw"""

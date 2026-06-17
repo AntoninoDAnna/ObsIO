@@ -196,7 +196,7 @@ function write_corr(path,C::Corr;comment = "",override::Bool=false)
     ALPHAdobs_close(file)
 end
 
-function write_corr(C::Corr{2};folder=".",ens="ens",set=nothing,subdirs=nothing,comment="",override::Bool = false )
+function write_corr(C::Corr{2};folder=".",ens="ens",set=nothing,subdirs=nothing,comment="",override::Bool = false ,info=false)
     dirname = joinpath(folder,ens)
     dirname = isnothing(set) ? dirname : joinpath(dirname,set)
     dirname = joinpath(dirname,"2pt")
@@ -211,10 +211,11 @@ function write_corr(C::Corr{2};folder=".",ens="ens",set=nothing,subdirs=nothing,
 
     filename = string(ens,"_x0_",x0,"_",gamma,"_kappa_",kappa,"_mu_",mu,"_theta1_",theta1,
                       "_theta2_",theta2,".bdio")
+    info && println(joinpath(dirname,filename))
     write_corr(joinpath(dirname,filename), C,comment=comment, override=override)
 end
 
-function write_corr(C::Corr{3};folder=".",ens="ens",set=nothing,subdirs=nothing,comment="",override::Bool = false )
+function write_corr(C::Corr{3};folder=".",ens="ens",set=nothing,subdirs=nothing,comment="",override::Bool = false, info=false )
     dirname  = joinpath(folder,ens)
     dirname  = isnothing(set) ? dirname : joinpath(dirname,set)
     dirname  = joinpath(dirname,"3pt")
@@ -229,6 +230,7 @@ function write_corr(C::Corr{3};folder=".",ens="ens",set=nothing,subdirs=nothing,
     theta3   = join(C.propagators[3].theta,"_")
     filename = string(ens,"_x0_",x0,"_",gamma,"_kappa_",kappa,"_mu_",mu,"_theta1_",theta1,
                       "_theta2_",theta2,"_theta3_",theta3,".bdio")
+    info &&println(joinpath(dirname,filename))
     write_corr(joinpath(dirname,filename), C,comment=comment, override=override)
 end
 

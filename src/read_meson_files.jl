@@ -158,10 +158,11 @@ The keyword parameter `id` is expected. If `correction` is `true` then the meson
 
 """
 function __read_mesons(path,gh,ch,match;
-                      nnoise_trunc=nothing,
-                      legacy::Bool=false,
-                      id::String,
-                      correction::Bool = false)
+                       nnoise_trunc=nothing,
+                       legacy::Bool=false,
+                       id::String,
+                       correction::Bool = false,
+                       nconf::Int64 = 0)
     ncorr = gh.ncorr
     tvals = gh.tvals
     nnoise = gh.nnoise
@@ -171,6 +172,7 @@ function __read_mesons(path,gh,ch,match;
         datsize =  4 + sum(c.dsize for c in ch) * tvals * nnoise
         div(fsize - gh.hsize - sum(c.hsize for c in ch), datsize)
     end
+    nconf = nconf == 0 ? ncfg : min(nconf,ncfg)
     N = correction ? div(length(match),2) : length(match)
     data_re = zeros(N, ncfg, tvals)
     data_im = zeros(N, ncfg, tvals)
@@ -210,7 +212,8 @@ function __read_mesons(path,gh,ch,match;
     res = Array{CorrData}(undef, N)
     @inbounds for c in 1:N
         cm = match[c]
-        res[c] = CorrData(ch[cm],vcfg,data_re[c, :, :],data_im[c, :, :],id)
+        res[c] = CorrData(ch[cm],vcfg,data_re[c, 1:nconf, :],
+                          data_im[c, 1:nconf, :],id)
     end
     return res
 end
@@ -223,13 +226,13 @@ function get_id(path,id)
 end
 
 @doc raw"""
-     read_mesons(path::String,gsrc::Gamma=None,gsrc::Gamma=None; id=nothing, legacy::Bool = false, nnoise_trunc = nothing,correction::Bool=false)::Vector{CorrData}
-     read_mesons(path::String,gamma::NTuple{2,Gamma}...; id=nothing, legacy::Bool = false, nnoise_trunc = nothing,correction::Bool=false)::Vector{CorrData}
-     read_mesons(path::AbstractVector{String}, p...;k... )::Vector{CorrData}
+     read_mesons(path::String,gsrc::Gamma=None,gsrc::Gamma=None; id=nothing, legacy::Bool = false, nnoise_trunc = nothing,correction::Bool=false, nconf::Int64=0)::Vector{CorrData}
+     read_mesons(path::String,gamma::NTuple{2,Gamma}...; id=nothing, legacy::Bool = false, nnoise_trunc = nothing,correction::Bool=false,nconf::Int64=0)::Vector{CorrData}
+     read_mesons(path::AbstractVector{String}, p...;nconf::Vector{Int64} = zeros(Int64, length(path)),k... )::Vector{CorrData}
 
 It reads the correlators saved in a meson.dat file. It returns a `Vector{CorrData}`. The gamma structures at source and/or sink either by specifying
 `gsrc` and `gsnk` or by givin a list of `Tuple` as `(gsrc,gsnk)` couple. `legacy::Bool` must be set to true if the data file is a legacy file,
-`nnoise_trunc` expect and `Integer` number that indicate the number of noise sources that are requested.
+`nnoise_trunc` expect and `Integer` number that indicate the number of noise sources that are requested. `nconf` indicate the number of configurations to keep. If zero or larger then the actual number of configurations, keeps all the configurations otherwise keeps `nconf` configurations.
 """
 function read_mesons(path::String,
                      gsrc::Gamma = None,
@@ -237,13 +240,16 @@ function read_mesons(path::String,
                      id = nothing,
                      legacy::Bool = false,
                      nnoise_trunc = nothing,
-                     correction::Bool=false)::Vector{CorrData}
+                     correction::Bool=false,
+                     nconf::Int64 = 0 )::Vector{CorrData}
     id = get_id(path,id)
     gh = read_GlobalHeader(path)
     c_header = read_CorrHeader(path, legacy=legacy)
     corr_match = __find_match(c_header,gsrc,gsnk)
     return  __read_mesons(path,gh,c_header,corr_match,
-                         nnoise_trunc = nnoise_trunc, legacy=legacy,id=id,correction=correction)
+                          nnoise_trunc = nnoise_trunc,
+                          legacy=legacy,id=id,correction=correction,
+                          nconf=nconf)
 end
 
 function read_mesons(path::String,
@@ -251,17 +257,23 @@ function read_mesons(path::String,
                      id = nothing,
                      legacy = false,
                      nnoise_trunc = nothing,
-                     correction::Bool=false)::Vector{CorrData}
+                     correction::Bool=false,
+                     nconf::Int64 = 0)::Vector{CorrData}
     id = get_id(path,id)
     g_header = read_GlobalHeader(path)
     c_header = read_CorrHeader(path, legacy=legacy)
     corr_match = __find_match(c_header,gamma...)
     return __read_mesons(path,g_header,c_header,corr_match,
-                         nnoise_trunc = nnoise_trunc, legacy=legacy,id=id,correction=false)
+                         nnoise_trunc = nnoise_trunc,
+                         legacy=legacy,id=id,correction=false,
+                         nconf = nconf)
 end
 
-function read_mesons(path::AbstractVector{String}, p...;k... )::Vector{CorrData}
-    res = [read_mesons(_path,p...;k...) for _path in path]
+function read_mesons(path::AbstractVector{String}, p...;
+                     nconf::Vector{Int64} = zeros(Int64,length(path)),
+                     k... )::Vector{Vector{CorrData}}
+    res = [read_mesons(_path,p...;nconf = nconf[idx],k...)
+           for (idx,_path) in enumerate(path)]
     nrep = length(res)
     ncorr = length(res[1])
     cdata = Vector{Vector{CorrData}}(undef, ncorr)
@@ -292,13 +304,30 @@ function read_mesons_by_chunk(path::Vector{String},gamma...;
         _r = __read_mesons(p,gh,ch,match,id=id,legacy=legacy,
                                 nnoise_trunc=nnoise_trunc,correction=false)
         for i in eachindex(_r)
-            for cdx in eachindex(_r[i].vcfg)
-                res[i].re_data[_r[i].vcfg[cdx],:] .= _r[i].re_data[cdx,:]
-                res[i].im_data[_r[i].vcfg[cdx],:] .= _r[i].im_data[cdx,:]
+            for (cdx,ncfg) in enumerate(_r[i].vcfg)
+                ncfg <= nconf || break
+                res[i].re_data[ncfg,:] .= _r[i].re_data[cdx,:]
+                res[i].im_data[ncfg,:] .= _r[i].im_data[cdx,:]
             end
         end
     end
     return res
+end
+
+function read_mesons_by_chunk(path::Vector{Vector{String}},gamma...;
+                              nconf = length.(path), k...)
+    res = [read_mesons_by_chunk(p,gamma..., nconf=n; k...)
+           for (p,n) in zip(path,nconf)]
+    nrep = length(res)
+    ncorr = length(res[1])
+    cdata = Vector{Vector{CorrData}}(undef, ncorr)
+    for icorr = 1:ncorr
+        cdata[icorr] = Vector{CorrData}(undef, nrep)
+        for r = 1:nrep
+            cdata[icorr][r] = res[r][icorr]
+        end
+    end
+    return cdata
 end
 
 function apply_rw(data::AbstractArray{Float64}, W::AbstractMatrix{Float64}, vcfg = nothing; id = nothing, fs = false)
@@ -370,14 +399,14 @@ function apply_rw(data::AbstractVector{<:AbstractArray{Float64}},
 end
 
 function corr_obs(cdata::CorrData, corr::Corr;
-                  real = true,
+                  real::Bool = true,
                   rw::Union{Array{Float64, 2}, Nothing}=nothing,
                   L = 1, info = false,
                   idm = nothing,
                   nms = Int64(maximum(cdata.vcfg)),
                   flag_strange = false)
     real ? data = cdata.re_data ./ L^3 : data = cdata.im_data ./ L^3
-    nt = size(data)[2]
+    nt = size(data,2)
     idm = isnothing(idm) ? Int64.(cdata.vcfg) : idm
     if isnothing(rw)
         # idm = isnothing(idm) ? collect(1:nms) : idm
@@ -391,7 +420,7 @@ function corr_obs(cdata::CorrData, corr::Corr;
     end
     corr = __update__(corr,obs=obs)
     if info
-        return !isnothing(rw) ?  (corr,obs) : (corr,ow,W_obs)
+        return isnothing(rw) ?  (corr,obs) : (corr,ow,W_obs)
     else
         return corr
     end
@@ -438,7 +467,124 @@ function corr_obs(cdata::AbstractVector{CorrData}, corr;
     end
     corr = __update__(corr,obs=obs)
     if info
-        return !isnothing(rw) ?  (corr,obs) : (corr,ow,W_obs)
+        return isnothing(rw) ?  (corr,obs) : (corr,ow,W_obs)
+    else
+        return corr
+    end
+end
+function corr_obs_TSM(scdata::CorrData,
+                      ccdata::CorrData,
+                      scorr::Corr;
+                      real::Bool=true,
+                      rw::Union{Array{Float64, 2}, Nothing}=nothing,
+                      L::Int64=1,
+                      info::Bool=false,
+                      sidm::Union{Vector{Int64},Nothing}=nothing,
+                      cidm::Union{Vector{Int64},Nothing}=nothing,
+                      nms::Union{Int64,Nothing}=nothing,
+                      flag_strange::Bool=false)
+    # scdata is sloppy, ccdata is correction
+    if scdata.id != ccdata.id
+        error("Error: scdata id != ccdata id")
+    end
+    if scdata.header != ccdata.header # Base.:(==) and Base.:(!=) are redifined in juobs_types.jl
+        error("Error: scdata header != ccdata header")
+    end
+    id = getfield(scdata, :id)
+    vcfg_sl   = getfield(scdata, :vcfg)
+    vcfg_corr = getfield(ccdata, :vcfg)
+    nms = isnothing(nms) ? Int64(maximum(vcfg_sl)) : nms # assuming vcfg_sl >= vcfg_corr
+    sidm = isnothing(sidm) ? Int64.(vcfg_sl) : sidm
+    cidm = isnothing(cidm) ? Int64.(vcfg_corr) : cidm
+    data1 = real ? scdata.re_data ./ L^3 : scdata.im_data ./ L^3
+    data2 = real ? ccdata.re_data ./ L^3 : ccdata.im_data ./ L^3
+    nt = size(data1, 2) # 1
+    if isnothing(rw)
+        obs1 = [uwreal(data1[:, x0], id, sidm, nms) for x0 = 1:nt]
+        obs2 = [uwreal(data2[:, x0], id, cidm, nms) for x0 = 1:nt]
+    else
+        data1_r, W_sl = apply_rw(data1, rw, vcfg_sl, id=id, fs=flag_strange)
+        data2_r, W_corr = apply_rw(data2, rw, vcfg_corr, id=id, fs=flag_strange)
+        ow1 = [uwreal(data1_r[:, x0], id, sidm, nms) for x0 = 1:nt]
+        ow2 = [uwreal(data2_r[:, x0], id, cidm, nms) for x0 = 1:nt]
+        W_obs_sl   = uwreal(W_sl, id, sidm, nms)
+        W_obs_corr = uwreal(W_corr, id, cidm, nms)
+        obs1 = [ow1[x0] / W_obs_sl for x0 = 1:nt]
+        obs2 = [ow2[x0] / W_obs_corr for x0 = 1:nt]
+    end
+    corr = __update__(scorr, obs=obs1+obs2)
+    if info
+        return isnothing(rw) ?  (corr, obs1, obs2) : corr, ow1, ow2, W_obs_sl
+    else
+        return corr
+    end
+end
+
+function corr_obs_TSM(scdata::AbstractVector{CorrData},
+                      ccdata::AbstractVector{CorrData},
+                      scorr::Corr;
+                      real::Bool=true,
+                      rw::Union{Array{Array{Float64, 2}, 1}, Nothing}=nothing,
+                      L::Int64=1,
+                      info::Bool=false,
+                      replica_sl::Union{Vector{Int64},Nothing}=nothing,
+                      sidm::Union{Vector{Int64},Nothing}=nothing,
+                      cidm::Union{Vector{Int64},Nothing}=nothing,
+                      nms::Union{Int64, Nothing}=nothing,
+                      flag_strange::Bool=false)
+    if any(getfield.(scdata, :id) .!= getfield.(ccdata, :id))
+        error("Error: scdata id != ccdata id")
+    end
+    if any(getfield.(scdata, :header) .!= getfield.(ccdata, :header)) # Base.:(==) and Base.:(!=) are redifined in juobs_types.jl
+        error("Error: scdata header != ccdata header")
+    end
+    id = getfield.(scdata, :id)
+    if !all(id .== id[1])
+        error("IDs are not equal")
+    end
+    vcfg_sl      = getfield.(scdata, :vcfg)
+    replica_sl   = isnothing(replica_sl) ? Int64.(maximum.(vcfg_sl)) : replica_sl
+    vcfg_corr    = getfield.(ccdata, :vcfg)
+    replica_corr = Int64.(maximum.(vcfg_corr))
+    nms = isnothing(nms) ? sum(replica_sl) : nms # assuming vcfg_sl >= vcfg_corr
+    nr = length(vcfg_sl)
+    if isnothing(sidm)
+        a = vcfg_sl[1]
+        for i in 2:nr
+            a = [a; a[end] .+ vcfg_sl[i]]
+        end
+        sidm = Int64.(a)
+    end
+    if isnothing(cidm)
+        a = vcfg_corr[1]
+        for i in 2:nr
+            a = [a; a[end] .+ vcfg_corr[i]]
+        end
+        cidm = Int64.(a)
+    end
+    data1 = real ? getfield.(scdata, :re_data) ./ L^3 : getfield.(scdata, :im_data) ./ L^3
+    data2 = real ? getfield.(ccdata, :re_data) ./ L^3 : getfield.(ccdata, :im_data) ./ L^3
+    nt = size(data1[1], 2)
+    if isnothing(rw)
+        tmp1 = cat(data1..., dims=1)
+        tmp2 = cat(data2..., dims=1)
+        obs1 = [uwreal(tmp1[:, x0], id[1], replica_sl, sidm, nms) for x0 = 1:nt]
+        obs2 = [uwreal(tmp2[:, x0], id[1], replica_sl, cidm, nms) for x0 = 1:nt]
+    else
+        data1_r, W = apply_rw(data1, rw, vcfg_sl, id=id[1], fs=flag_strange)
+        data2_r, W = apply_rw(data2, rw, vcfg_corr, id=id[1], fs=flag_strange)
+        tmp1 = cat(data1_r..., dims=1)
+        tmp2 = cat(data2_r..., dims=1)
+        tmp_W = cat(W..., dims=1)
+        ow1 = [uwreal(tmp1[:, x0], id[1], replica_sl, sidm, nms) for x0 = 1:nt]
+        ow2 = [uwreal(tmp2[:, x0], id[1], replica_sl, cidm, nms) for x0 = 1:nt]
+        W_obs = uwreal(tmp_W, id[1], replica_sl, sidm, nms)
+        obs1 = [ow1[x0] / W_obs for x0 = 1:nt]
+        obs2 = [ow2[x0] / W_obs for x0 = 1:nt]
+    end
+    corr = __update__(scorr, obs=obs1+obs2)
+    if info
+        return isnothing(rw) ?  (corr, obs1, obs2) : corr, ow1, ow2, W_obs_sl
     else
         return corr
     end
