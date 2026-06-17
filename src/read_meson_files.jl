@@ -740,42 +740,12 @@ function read_ms1(path::String; v::String="1.2")
     return W
 end
 
-function concat_data!(data1::Vector{CorrData}, data2::Vector{CorrData})
-    N = length(data1)
-    if length(data1) != length(data2)
-        error("number of correlators do not match")
-    end
-    for k = 1:N
-        data1[k].vcfg = vcat(data1[k].vcfg, data2[k].vcfg)
-        data1[k].re_data = vcat(data1[k].re_data, data2[k].re_data)
-        data1[k].im_data = vcat(data1[k].im_data, data2[k].im_data)
-        idx = sortperm(data1[k].vcfg)
-        data1[k].vcfg = data1[k].vcfg[idx]
-        data1[k].re_data = data1[k].re_data[idx, :]
-        data1[k].im_data = data1[k].im_data[idx, :]
-    end
-    return nothing
-end
-
-function concat_data!(data1::Vector{Vector{CorrData}}, data2::Vector{Vector{CorrData}})
-    N = length(data1)
-    if length(data1) != length(data2)
-        error("number of correlators do not match")
-    end
-    R = length(data1[1])
-    if length(data1[1]) != length(data2[1])
-        error("number of replicas do not match")
-    end
-    for k = 1:N
-        for r = 1:R
-            data1[k][r].vcfg = vcat(data1[k][r].vcfg, data2[k][r].vcfg)
-            data1[k][r].re_data = vcat(data1[k][r].re_data, data2[k][r].re_data)
-            data1[k][r].im_data = vcat(data1[k][r].im_data, data2[k][r].im_data)
-            idx = sortperm(data1[k][r].vcfg)
-            data1[k][r].vcfg = data1[k][r].vcfg[idx]
-            data1[k][r].re_data = data1[k][r].re_data[idx, :]
-            data1[k][r].im_data = data1[k][r].im_data[idx, :]
-        end
-    end
-    return nothing
+function concat_data!(dest::CorrData, data::CorrData...)
+    dest.vcfg     = vcat(dest.vcfg,   getfield.(data,:vcfg)...)
+    dest.re_data  = vcat(dest.re_data,gefield.(data,:re_data)...)
+    dest.im_data  = vcat(dest.im_data,gefield.(data,:im_data)...)
+    aux = sortperm(data.vcfg)
+    dest.vcfg    = dest.vcfg[aux]
+    dest.re_data = dest.re_data[aux,:]
+    dest.im_data = dest.im_data[aux,:]
 end
