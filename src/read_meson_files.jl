@@ -299,17 +299,11 @@ function read_mesons_by_chunk(path::Vector{String},gamma...;
     ch = read_CorrHeader(path[1])
     match = __find_match(ch,gamma...)
     Ncorr = length(match)
-    res = [CorrData(ch[m],nconf,gh.tvals,id) for m in match]
+    res = [CorrData(ch[m],gh.tvals,id) for m in match]
     for p in path
         _r = __read_mesons(p,gh,ch,match,id=id,legacy=legacy,
-                                nnoise_trunc=nnoise_trunc,correction=false)
-        for i in eachindex(_r)
-            for (cdx,ncfg) in enumerate(_r[i].vcfg)
-                ncfg <= nconf || break
-                res[i].re_data[ncfg,:] .= _r[i].re_data[cdx,:]
-                res[i].im_data[ncfg,:] .= _r[i].im_data[cdx,:]
-            end
-        end
+                            nnoise_trunc=nnoise_trunc, correction=false)
+        concat_data!.(res,_r)
     end
     return res
 end
