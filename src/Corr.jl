@@ -280,6 +280,9 @@ mutable struct CorrData
     CorrData(a, b, c, d, e) = new(a, b, c, d, e,)
     CorrData(header, ncfg, nt, id) = new(header,collect(1:ncfg),
                                          zeros(ncfg,nt),zeros(ncfg,nt),id)
+    CorrData(header,nt,id) =
+        new(header, Int32[], Matrix{Float64}(undef,0,nt),
+            Matrix{Float64}(undef,0,nt), id)
 end
 
 function Base.show(io::IO, s::Smearing)
