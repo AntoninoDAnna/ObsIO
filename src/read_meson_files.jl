@@ -409,7 +409,7 @@ function corr_obs(cdata::CorrData, corr::Corr;
         # idm = isnothing(idm) ? collect(1:nms) : idm
         data_r, W = apply_rw(data, rw, cdata.vcfg, id=cdata.id, fs=flag_strange)
         ow = [uwreal(data_r[:, x0], cdata.id, idm, nms) for x0 = 1:nt]
-        W_obs = uwreal(W, cdata.id, idm, nms)
+        W_obs = uwreal(W, cdata.id, nms)
         obs = [ow[x0] / W_obs for x0 = 1:nt]
     end
     corr = __update__(corr,obs=obs)
@@ -456,7 +456,7 @@ function corr_obs(cdata::AbstractVector{CorrData}, corr;
         ow =vcat(data_r...) |>
             x-> [uwreal(x[:, x0],id, replica, idm, nms) for x0 = 1:nt]
         W_obs =vcat(W...) |>
-            x->uwreal(x, id,replica, idm, nms)
+            x->uwreal(x, id,replica, nms)
         obs = [ow[x0] / W_obs for x0 = 1:nt]
     end
     corr = __update__(corr,obs=obs)
@@ -466,6 +466,7 @@ function corr_obs(cdata::AbstractVector{CorrData}, corr;
         return corr
     end
 end
+
 function corr_obs_TSM(scdata::CorrData,
                       ccdata::CorrData,
                       scorr::Corr;
@@ -501,8 +502,8 @@ function corr_obs_TSM(scdata::CorrData,
         data2_r, W_corr = apply_rw(data2, rw, vcfg_corr, id=id, fs=flag_strange)
         ow1 = [uwreal(data1_r[:, x0], id, sidm, nms) for x0 = 1:nt]
         ow2 = [uwreal(data2_r[:, x0], id, cidm, nms) for x0 = 1:nt]
-        W_obs_sl   = uwreal(W_sl, id, sidm, nms)
-        W_obs_corr = uwreal(W_corr, id, cidm, nms)
+        W_obs_sl   = uwreal(W_sl, id, nms)
+        W_obs_corr = uwreal(W_corr, id, nms)
         obs1 = [ow1[x0] / W_obs_sl for x0 = 1:nt]
         obs2 = [ow2[x0] / W_obs_corr for x0 = 1:nt]
     end
@@ -572,7 +573,7 @@ function corr_obs_TSM(scdata::AbstractVector{CorrData},
         tmp_W = cat(W..., dims=1)
         ow1 = [uwreal(tmp1[:, x0], id[1], replica_sl, sidm, nms) for x0 = 1:nt]
         ow2 = [uwreal(tmp2[:, x0], id[1], replica_sl, cidm, nms) for x0 = 1:nt]
-        W_obs = uwreal(tmp_W, id[1], replica_sl, sidm, nms)
+        W_obs = uwreal(tmp_W, id[1], replica_sl, nms)
         obs1 = [ow1[x0] / W_obs for x0 = 1:nt]
         obs2 = [ow2[x0] / W_obs for x0 = 1:nt]
     end
