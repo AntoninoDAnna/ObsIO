@@ -215,35 +215,34 @@ function _read_corr(path)
     return Corr(obs,prop)
 end
 
+function make_filter(;filters...)
+    filter(x::String) = all(contains(x,v) for (_,v) in filters)
+    return filter
+end
+
+
+function nofile_found(dirname;filters...)
+   error(LazyString(" No file found in $dirname that fulfills the requirements: ", join(["$k => $v" for (k,v) in filters], "; ")))
+end
+
+function __find_corr_file(ens::String; rootdir::String,
+                          subdir::String = "",
+                          filters...)
+    dirname = joinpath(rootdir,ens,subdir)
+    isdir(dirname) || error("$dirname does not exists")
+    files = filter(make_filter(;filters...),readdir(dirname,join=true))
+    !isempty(files) || nofile_found(dirname;filters...)
+    return files
+end
+
+
 function read_corr(ens;rootdir::String = datadir(),
-                   subdir::Union{String,Regex,Nothing}=nothing,
-                   label::Union{String,Regex,Nothing}=nothing,
-                   set::Union{String,Regex,Nothing}=nothing,
-                   theta1::Union{Vector{Float64},Float64} = Float64[],
-                   theta2::Union{Vector{Float64},Float64} = Float64[],
-                   kappa::AbstractArray{Float64} = Float64[],
-                   mu::Vector{Float64} = Float64[])
-    dirname = joinpath(rootdir,ens)
-    dirname = isnothing(subdir) ? dirname : joinpath(dirname,subdir)
-    if !isdir(dirname)
-        error("Directory $dirname does not exists")
-    end
-    files = readdir(dirname)
-    !isnothing(set) && filter!(x->contains(x,set),files)
-    !isnothing(label) && filter!(x->contains(x,label),files)
-    for (spec,txt) in zip([theta1,theta2,kappa,mu],
-                          ["theta1","theta2","kappa","mu"])
-        length(spec)==0 && continue;
-        join([txt;string.(spec)],"_") |>
-            aux->filter!(x->contains(x,aux),files)
-    end
-    filter!(x->!endswith(x,'~'),files)
-    if length(files) == 0
-        error("No file exist under the conditions:\n kappa =  $(kappa) \n mu =$mu \n theta1 = $theta  \n theta2 = $theta2 \n label = $label \n set = $set")
-    end
+                   subdir::String = "",
+                   filters...)
+    files = __find_corr_file(ens,rootdir=rootdir, subdir=subdir; filters...)
     if length(files) == 1
-        return _read_corr(joinpath(dirname,files[1]))
+        return _read_corr(files[1])
     else
-        return [_read_corr(joinpath(dirname,f)) for f in files]
+        return [_read_corr(f) for f in files]
     end
 end
