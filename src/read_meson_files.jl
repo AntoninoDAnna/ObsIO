@@ -392,13 +392,24 @@ function apply_rw(data::AbstractVector{<:AbstractArray{Float64}},
     end
 end
 
-function corr_obs(cdata::CorrData, corr::Corr;
-                  real::Bool = true,
-                  rw::Union{Array{Float64, 2}, Nothing}=nothing,
-                  L = 1, info = false,
-                  idm = nothing,
-                  nms = Int64(maximum(cdata.vcfg)),
-                  flag_strange = false)
+function _check_compatability(cdata::CorrData, corr::Corr)
+    header = cdata.header
+    src(corr) == header.x0                    || return false
+    all(gamma_struct(c)[[1,end]].==type)      || return false
+    all(kappa(corr)[[1,end]].== header.k)     || return false
+    all(mu(corr))[[1,end]] .==header.mu)      || return false
+    all(theta(corr)[1].==header.theta[1])     || return false
+    all(theta(corr)[end] .==header.theta[2])  || return false
+    corr.points[1].qsmearing == header.q[1]   || return false
+    corr.points[end].qsmearing == header.q[2] || return false
+    corr.points[1].gsmearing == header.g[1]   || return false
+    corr.points[end].gsmearing == header.g[2] || return false
+    return true
+end
+
+function corr_obs(cdata::CorrData, corr::Corr; real::Bool = true, rw::Union{Array{Float64, 2}, Nothing}=nothing,  L = 1, info = false,
+    idm = nothing,  nms = Int64(maximum(cdata.vcfg)), flag_strange = false)
+    _check_compatability(cdata,corr) || error("CorrData and Corr are incompatible")
     real ? data = cdata.re_data ./ L^3 : data = cdata.im_data ./ L^3
     nt = size(data,2)
     idm = isnothing(idm) ? Int64.(cdata.vcfg) : idm
@@ -420,14 +431,9 @@ function corr_obs(cdata::CorrData, corr::Corr;
     end
 end
 
-function corr_obs(cdata::AbstractVector{CorrData}, corr;
-                  real = true,
-                  replica = nothing,
-                  rw::Union{Vector{Array{Float64, 2}}, Nothing}=nothing,
-                  L = 1, info = false,
-                  idm = nothing,
-                  nms = 0,
-                  flag_strange = false)
+function corr_obs(cdata::AbstractVector{CorrData}, corr; real = true, replica = nothing, rw::Union{Vector{Array{Float64, 2}}, Nothing}=nothing,
+    L = 1, info = false, idm = nothing, nms = 0, flag_strange = false)
+    all(_check_compatability(cd,corr) for cd in cdata) || error("CorrData and Corr are incompatible")
     nrep = length(cdata)
     id = let
         ids = getfield.(cdata,:id)
@@ -485,6 +491,7 @@ function corr_obs_TSM(scdata::CorrData,
     if scdata.header != ccdata.header # Base.:(==) and Base.:(!=) are redifined in juobs_types.jl
         error("Error: scdata header != ccdata header")
     end
+    _check_compatability(scdata,corr) || error("CorrData and Corr are incompatible")
     id = getfield(scdata, :id)
     vcfg_sl   = getfield(scdata, :vcfg)
     vcfg_corr = getfield(ccdata, :vcfg)
@@ -537,6 +544,7 @@ function corr_obs_TSM(scdata::AbstractVector{CorrData},
     if !all(id .== id[1])
         error("IDs are not equal")
     end
+    all(_check_compatability(cd,corr) for c in scdata) || error("CorrData and Corr are incompatible")
     vcfg_sl      = getfield.(scdata, :vcfg)
     replica_sl   = isnothing(replica_sl) ? Int64.(maximum.(vcfg_sl)) : replica_sl
     vcfg_corr    = getfield.(ccdata, :vcfg)
