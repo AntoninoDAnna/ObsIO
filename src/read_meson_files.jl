@@ -394,21 +394,25 @@ end
 
 function _check_compatability(cdata::CorrData, corr::Corr)
     header = cdata.header
-    src(corr) == header.x0                    || return false
-    all(gamma_struct(c)[[1,end]].==type)      || return false
+    src(corr) == header.x0 || return false
+    all(gamma_struct(corr)[[1,2]].==header.type)  || return false
     all(kappa(corr)[[1,end]].== header.k)     || return false
-    all(mu(corr))[[1,end]] .==header.mu)      || return false
+    all(mu(corr)[[1,end]] .==header.mu)       || return false
     all(theta(corr)[1].==header.theta[1])     || return false
     all(theta(corr)[end] .==header.theta[2])  || return false
-    corr.points[1].qsmearing == header.q[1]   || return false
-    corr.points[end].qsmearing == header.q[2] || return false
-    corr.points[1].gsmearing == header.g[1]   || return false
-    corr.points[end].gsmearing == header.g[2] || return false
+    corr.points[1].qsmearing == header.q[1].type   || return false
+    corr.points[end].qsmearing == header.q[2].type || return false
+    corr.points[1].gsmearing == header.g[1].type   || return false
+    corr.points[end].gsmearing == header.g[2].type || return false
     return true
 end
 
-function corr_obs(cdata::CorrData, corr::Corr; real::Bool = true, rw::Union{Array{Float64, 2}, Nothing}=nothing,  L = 1, info = false,
-    idm = nothing,  nms = Int64(maximum(cdata.vcfg)), flag_strange = false)
+function corr_obs(cdata::CorrData,corr::Corr;
+                  real::Bool = true,
+                  rw::Union{Array{Float64, 2}, Nothing}=nothing,
+                  L = 1, info = false,
+                  idm = nothing,  nms = Int64(maximum(cdata.vcfg)),
+                  flag_strange = false)
     _check_compatability(cdata,corr) || error("CorrData and Corr are incompatible")
     real ? data = cdata.re_data ./ L^3 : data = cdata.im_data ./ L^3
     nt = size(data,2)

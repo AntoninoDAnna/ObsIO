@@ -193,7 +193,7 @@ end
 
 function Base.:(==)(A::Smearing{T}, B::Smearing{T}) where {T<:EnumClass}
     for f in fieldnames(Smearing{T})
-        println(f)
+
         getfield(A,f) ==getfield(B,f) || return false
     end
     return true
