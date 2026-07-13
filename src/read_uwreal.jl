@@ -109,12 +109,13 @@ function ObsIO_read_uwreal(fb,ws::ADerrors.wspace,mapsids::Dict{Int64,Int64},
         ie = is +nrep[i]-1
         str = id2str[ids[i]]
         newvrep = get(mapvrep,str,convert(Vector{Int64},ivrep[is:ie]))
+        _nrep = min(length(newvrep),nrep[i])
         ndfl = zeros(sum(newvrep))
         isn = 1
         iso = 1
-        for irep in 1:nrep[i]
+        for irep in 1:_nrep
             if newvrep[irep] < ivrep[is+irep-1]
-                @warn "ID: $(ids[i]), repl $irep. you're throwing data away"
+                @warn "ID: $(str), repl $irep. you're throwing data away"
                 ien = isn + newvrep[irep]-1
                 ieo = iso + newvrep[irep]-1
                 ndfl[isn:ien] .= dfl[i][iso:ieo]
@@ -128,6 +129,9 @@ function ObsIO_read_uwreal(fb,ws::ADerrors.wspace,mapsids::Dict{Int64,Int64},
                 isn = isn + newvrep[irep]
                 iso = ieo+1
             end
+        end
+        if _nrep< nrep[i]
+            @warn "ID: $(str), throwing away $(nrep[i]-_nrep) replicas"
         end
         ADerrors.add_DB(ndfl, ids_obs[i], newvrep, ws, true)
         is = ie + 1
