@@ -10,6 +10,12 @@ function extract_all(regex,line,type)
     return tuple([parse(type,x.match) for x in m]...)
 end
 
+function check_overflow(line,msg)
+    isnothing(match(r"(?<=\[)([^\]]+)",line)) && return nothing
+    error(LazyString("Overflowed Section: ",msg))
+end
+
+
 function read_propagator(file)
     kappa, mu = 0.0, 0.0
     pF = ntuple(x->0.0,Val(4))
@@ -43,8 +49,8 @@ function read_propagator(file)
             pF = extract_all(r"[0-9]+",line,Int64)
         elseif contains(line,"seq_x0")
             seq_x0 = extract_first(r"(?<=\s)[0-9]+",line,Int64)
-        elseif  !isnothing(match(r"(?<=\[)([^\]]+)",line))
-            error("Overflowed Propagator section")
+        else
+            check_overflow(line, "Propagator")
         end
     end
     src  = Point(seq_type,seq_x0,QuarkSmearing.Local,GluonicSmearing.Local)
@@ -97,7 +103,7 @@ function update_propagators_tuple(props::NTuple{3,Propagator},
 end
 
 
-function read_correlator(file,props)
+function read_correlator(file,props,bc)
     iprop = (0.,0.)
     type = nothing
     gsmear = (0,0)
@@ -128,7 +134,7 @@ function read_correlator(file,props)
     end
     props = resolve_seq_prop(props[iprop[1]],props[iprop[2]],props)
     props = update_propagators_tuple(props, x0,type,qsmear,gsmear)
-    return Corr([],props)
+    return Corr([],props,bc)
 end
 function read_measurements(file)
     nprop,ncorr = 0,0
@@ -143,17 +149,29 @@ function read_measurements(file)
             flag |= 0x2
         end
         ((flag & 0x03) == 0x03) && break;
-        if !isnothing(match(r"(?<=\[)([^\]]+)",line))
-            error("In input file, section [Measurements], nprop or ncorr are missing")
-        end
+        check_overflow(line,"Measurements. nprop or ncorr are missing")
     end
     return nprop,ncorr
 end
+
+function read_bc(file)
+    to_BC = (Open, SF, Open_SF, Periodic)
+    while true
+        line = readline(file)
+        if contains(line, "type")
+            idx = parse(Int64,match(r"[0-9]",line).match)
+            return to_BC[idx+1]
+        end
+        check_overflow(line, "Boundary Conditions, type field is missing")
+    end
+end
+
 
 function read_input_file(path)
     file = open(path,"r")
     props =nothing;
     corrs =nothing;
+    bc = nothing;
     while !eof(file)
         head = match(r"(?<=\[)([^\]]+)",readline(file))
         isnothing(head) && continue;
@@ -161,6 +179,8 @@ function read_input_file(path)
             nprop,ncorr = read_measurements(file)
             props = Vector{Propagator}(undef, nprop)
             corrs = Vector{Corr}(undef,ncorr)
+        elseif contains(head.match, "Boundary conditions")
+            bc = read_bc(file)
         elseif contains(head.match,"Propagator")
             idx = match(r"[0-9]+",head.match) |> x->parse(Int64,x.match) + 1
             if idx <=length(props)
@@ -169,11 +189,10 @@ function read_input_file(path)
                 @warn "In input file there are more propagators that expected"
                 push!(props[idx],read_propagator(file))
             end
-
         elseif contains(head.match,"Correlator")
             idx = match(r"[0-9]+",head.match)|> x->parse(Int64,x.match) + 1
             if idx <=length(corrs)
-                corrs[idx] = read_correlator(file,props)
+                corrs[idx] = read_correlator(file,props,bc)
             else
                 @warn "In input file there are more correlators that expected"
                 push!(corrs,read_correlator(file,props))

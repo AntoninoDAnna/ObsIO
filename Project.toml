@@ -1,7 +1,7 @@
 name = "ObsIO"
 uuid = "92b78e04-c3a5-4d37-b6f3-858be3158311"
-authors = ["nuccio "]
 version = "0.1.0"
+authors = ["nuccio "]
 
 [deps]
 ADerrors = "5e92007d-7bf1-471c-8ceb-4591b8b567a9"
@@ -14,5 +14,5 @@ Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 ADerrors = "0.1.0"
 ALPHAio = "0.4.0"
 BDIO = "0.1.0"
-EnumClasses = ">=0.1.0"
+EnumClasses = "0.1.0"
 Statistics = "1.11.1"

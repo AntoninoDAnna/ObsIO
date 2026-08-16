@@ -2,25 +2,27 @@ import Base:show
 import Base:(==)
 
 @doc raw"""
-    struct Point
+    struct Point{T} where {T<:Union{Integer,Missing}}
 
 Immutable structure that contains all information regarding a point in a correlator
 
 ## Fields
 - `gamma::Gamma`: gamma structure (See also [`Gamma`](@ref))
-- `x0::Union{Int64,Missing}`: Position in lattice unit. If `missing` then it rappresent the varying point.
+- `x0::T`: Position in lattice unit. If `T isa Missing` then it rappresent the moving point.
 - `qsmearing::QuarkSmearing.Type`: Quark Smearing at x0 (See also [`QuarkSmearing](@ref))
 - `gsmearing::GluonicSmearing.Type`: Gluonic Smearing at x0 (See also [`GluonicSmearing](@ref))
         """
-struct Point
+struct Point{T<:Union{Integer,Missing}}
     gamma::Gamma
-    x0::Union{Int64,Missing}
+    x0::T
     qsmearing::QuarkSmearing.Type
     gsmearing::GluonicSmearing.Type
-    Point() = new(None,-1,QuarkSmearing.None,GluonicSmearing.None)
-    Point(g,x,qs,gs) = new(g,x,qs,gs)
-    Point(x::Base.Generator) =new(x...)
+    Point() = new{Int64}(None,-1,QuarkSmearing.None,GluonicSmearing.None)
+    Point(g,x,qs,gs) = new{typeof(x)}(g,x,qs,gs)
+    Point(x::Base.Generator) = Point(x...)
 end
+
+basetype(::Point{T}) where {T<:Union{Integer,Missing}} = T
 
 @doc raw"""
     struct Propagator
@@ -38,17 +40,27 @@ Immutable structure that contains all the informations regarding a propagator
 ## Warning
   `seq_prop` accept also `Int64`. This is an internal functionality used to keep information on the source propagator and should not be used externally.
     """
-struct Propagator
+struct Propagator{T1<:Union{Integer,Missing},
+                  T2<:Union{Integer,Missing}}
     k::Float64
     mu::Float64
     theta::NTuple{3,Float64}
     pF::NTuple{4,Int64}
-    src::Point
-    snk::Point
-    seq_prop::Union{Int64,Bool}
-    Propagator() = new(0.,0.,(0.,0.,0),(0,0,0,0),Point(),Point(),-1)
-    Propagator(k,m,t,p,src,snk,seq_prop=false) = new(k,m,t,p,src,snk,seq_prop)
-    Propagator(x::Base.Generator) = new(x...)
+    src::Point{T1}
+    snk::Point{T2}
+    seq_prop::Bool
+    function Propagator()
+        k = 0.0
+        mu = 0.0
+        t = ntuple(i->0.0,3)
+        p = ntuple(i->0,4)
+        src = Point()
+        snk = Point()
+        return new{basetype(src),basetype(snk)}(k,mu,t,p,src,snk,false)
+    end
+    Propagator(k,m,t,p,src,snk,seq_prop=false) =
+        new{basetype(src),basetype(snk)}(k,m,t,p,src,snk,seq_prop)
+    Propagator(x::Base.Generator) = Propagator(x...)
 end
 
 @doc raw"""
@@ -57,6 +69,21 @@ end
 Abstract Type for correlators
 """
 abstract type AbstractCorr end
+
+@doc raw"""
+     AbstractBC
+
+Abstract Type for Boundary Condition in time
+"""
+
+abstract type AbstractBC end
+struct Periodic <: AbstractBC end
+struct Open <: AbstractBC end
+struct SF <: AbstractBC end
+struct Open_SF <: AbstractBC end
+
+const AbstractOpen = Union{Open,Open_SF}
+const AbstractSF = Union{SF,Open_SF}
 
 @doc raw"""
      struct Corr{N} <:AbstractCorr
@@ -71,21 +98,23 @@ moving and the other `N-1` point are fixed.
 - `points::NTuple{N,Point}`: Correlator's Point. By convention, `Point`s are ordered in sequence with the first point being the source and the last point the sink (See also [`Point`](@ref))
 - `propagators::NTuple{N,Proopagator`: Propagators list. By convention, `Propagator`s are ordered in sequence. The sink of `propagator[i]` is the source of `propagators[i+1]`. Moreover, the source of `propagator[i]` is `points[i]` and the sink is `point[i%N +1]`. (See also [`Propagator`](@ref))
 """
-struct Corr{N} <: AbstractCorr
-    obs::AbstractVector
+
+struct Corr{N, BC<:AbstractBC, T} <: AbstractCorr
+    obs::AbstractArray{T}
     points::NTuple{N,Point}
     propagators::NTuple{N,Propagator}
-    function Corr(o,pr::NTuple{N,Propagator}) where N
+    function Corr(o::AbstractArray{T}, pr::NTuple{N,Propagator},
+                  ::Type{BC}) where {N,BC<:AbstractBC,T}
         pts = (pr[1].src,)
         for i in 1:N-1
             pts = (pts..., pr[i].snk)
         end
-        return new{N}(o,pts,pr)
+        return new{N,BC,T}(o,pts,pr)
     end
-    Corr(o,po::NTuple{N,Point},pr::NTuple{N,Propagator}) where N=
-        new{N}(o,po,pr)
-    Corr(N::Int64) = new{N}([],ntuple(x->Point(),N),ntuple(x->Propagator(),N))
-    Corr(x::Base.Generator) = Corr(x...)
+    Corr(o::AbstractArray{T},po::NTuple{N,Point},pr::NTuple{N,Propagator},::Type{BC}) where {N,BC<:AbstractBC,T}=
+        new{N,BC,T}(o,po,pr)
+    Corr(N::Int64,::Type{BC}, ::Type{T} = Float64) where{BC<:AbstractBC,T}  = new{N,BC,T}(T[],ntuple(x->Point(),N),ntuple(x->Propagator(),N))
+    Corr(x::Base.Generator,bc) = Corr(x...,bc)
 end
 
 @doc raw"""
@@ -93,54 +122,54 @@ end
 
 return a tuple containing the hopping parameters of the propagator
 """
-kappa(c::Corr{N}) where N = ntuple(x->c.propagators[x].k, N)
+kappa(c::Corr{N,BC,T}) where {N,BC,T} = ntuple(x->c.propagators[x].k, N)
 
 @doc raw"""
      mu(c::Corr{N}) where N
 
 return a tuple containing the twisted masses of the propagator
 """
-mu(c::Corr{N}) where N = ntuple(x->c.propagators[x].mu, N)
+mu(c::Corr{N,BC,T}) where {N,BC,T} = ntuple(x->c.propagators[x].mu, N)
 
 @doc raw"""
      theta(c::Corr{N}) where N
 
 return a tuple containing the theta boundary conditions of the propagator
 """
-theta(c::Corr{N}) where N = ntuple(x->c.propagators[x].theta, N)
+theta(c::Corr{N,BC,T}) where {N,BC,T} = ntuple(x->c.propagators[x].theta, N)
 
 @doc raw"""
      src(c::Corr{N}) where N
 
 return the source position in lattice units. Equivalent to `c.point[1].x0`
 """
-src(c::Corr{N}) where N = c.points[1].x0
+src(c::Corr{N,BC,T}) where {N,BC,T} = c.points[1].x0
 
 @doc raw"""
      src(c::Corr{N}) where N
 
 return the source position in lattice units. Equivalent to `c.point[end].x0`
 """
-snk(c::Corr{N}) where N = c.points[end].x0
+snk(c::Corr{N,BC,T}) where {N,BC,T} = c.points[end].x0
 
 @doc raw"""
      ts(c::Corr{N}) where N
 
 return the source-sink distance in lattice. assume that `N ⪩ 3`
     """
-ts(c::Corr{N}) where N = snk(c) - src(c)
+ts(c::Corr{N,BC,T}) where {N,BC,T} = snk(c) - src(c)
 
 @doc raw"""
      gamma_struct(c::Corr{N}) where N
 
 return a `NTuple{N,Gamma}` with the correlator's gamma structures"""
-gamma_struct(c::Corr{N}) where N = ntuple(i->c.points[i].gamma,N)
+gamma_struct(c::Corr{N,BC,T}) where {N,BC,T} = ntuple(i->c.points[i].gamma,N)
 
 
 @doc raw"""
      __update__(p::Point;k...)
      __update__(p::Propagator;k...)
-     __update__(c::Corr{N} where N; k...)
+     __update__(c::Corr{N,BC,T} where {N,BC<:AbstractBC,T}; k...)
 
 return a new object that updates the original object with the values in `k`. If no new information is given, then return the original
 
@@ -158,9 +187,11 @@ function __update__(p::Propagator;k...)
     return Propagator(get(k,s,getfield(p,s)) for s in fieldnames(Propagator))
 end
 
-function __update__(c::Corr{N} where N; k...)
+function __update__(c::Corr{N,BC,T};k...) where {N, BC<:AbstractBC, T}
     isempty(k) && (return c)
-    return Corr(get(k,s,getfield(c,s)) for s in fieldnames(Corr))
+    new_bc = get(k,:bc, BC)
+    return Corr((get(k,s,getfield(c,s)) for s in fieldnames(Corr)),
+                new_bc)
 end
 
 @doc raw"""
@@ -322,8 +353,15 @@ function show_customized_propagator(io::IO, p::Propagator,label::Vector{<:Abstra
     print(io,tab,"propagate from ", f(p.src)," to ",f(p.snk))
 end
 
-function Base.show(io::IO,c::Corr{N} where N)
-    N = length(c.points)
+function Base.show(io::IO,c::Corr{N,BC,T}) where {N,BC,T}
+    print(io,"$N-pt Corr; ", join(gamma_struct(c),"-"),
+          "; kappa: ", join(kappa(c),", "),
+          "; mu: ", join(mu(c),", "),
+          "; src: ", src(c), N>2 ? string("; snk: ",snk(c)) : "")
+end
+
+
+function Base.print(io::IO,c::Corr{N,BC,T}) where {N,BC,T}
     println(io, "$(N)-point correlator")
     println(io,"Points:")
     for p in c.points
