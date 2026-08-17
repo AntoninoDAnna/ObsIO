@@ -2,7 +2,7 @@ import Base:show
 import Base:(==)
 
 @doc raw"""
-    struct Point{T} where {T<:Union{Integer,Missing}}
+    struct Point{T<:Union{Integer,Missing}}
 
 Immutable structure that contains all information regarding a point in a correlator
 
@@ -25,7 +25,7 @@ end
 basetype(::Point{T}) where {T<:Union{Integer,Missing}} = T
 
 @doc raw"""
-    struct Propagator
+    struct Propagator{T1<:Union{Integer,Missing},T2<:Union{Integer,Missing}}
 
 Immutable structure that contains all the informations regarding a propagator
 
@@ -86,7 +86,7 @@ const AbstractOpen = Union{Open,Open_SF}
 const AbstractSF = Union{SF,Open_SF}
 
 @doc raw"""
-     struct Corr{N} <:AbstractCorr
+     struct Corr{N, BC<:AbstractBC, T} <: AbstractCorr
 
 immutable structure for `N` point correlators.
 This structure support correlators where only one `Point` is
@@ -174,6 +174,7 @@ gamma_struct(c::Corr{N,BC,T}) where {N,BC,T} = ntuple(i->c.points[i].gamma,N)
 return a new object that updates the original object with the values in `k`. If no new information is given, then return the original
 
 ## Warning
+
 
 This function is an internal method used to simplify the reading data files process. It is not meant to be used by the external users.
 """
