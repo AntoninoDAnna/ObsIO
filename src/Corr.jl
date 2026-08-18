@@ -117,6 +117,8 @@ struct Corr{N, BC<:AbstractBC, T} <: AbstractCorr
     Corr(x::Base.Generator,bc) = Corr(x...,bc)
 end
 
+Base.eltype(::Corr{N,B,T}) where {N,B<:AbstractBC, T} = T
+
 @doc raw"""
      kappa(c::Corr{N}) where N
 
