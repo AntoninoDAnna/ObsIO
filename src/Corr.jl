@@ -282,7 +282,7 @@ mutable struct CorrHeader
         a = new()
         a.k  = (aux_f[1],aux_f[2])
         a.mu = (aux_f[3],aux_f[4])
-        a.dp = zeros(2)
+        a.dp = (0.0,0.0)
         a.type = Gamma.((aux_i[1],aux_i[2]))
         a.x0 = aux_i[3]
         a.is_real = aux_i[4]==1
@@ -291,6 +291,7 @@ mutable struct CorrHeader
         a.dsize = 16 - 8* a.is_real
         return a
     end
+    CorrHeader() = new()
 end
 
 function Base.:(==)(A::CorrHeader, B::CorrHeader)
