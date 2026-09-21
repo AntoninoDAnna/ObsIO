@@ -76,7 +76,7 @@ function write_corr(C::Corr{3,BC,T};folder=".",ens="ens",set=nothing,subdirs=not
     gamma    = getfield.(C.points,:gamma) |> x -> join(x,"_")
     dirname  = joinpath(dirname,gamma)
     dirname  = isnothing(subdirs) ? dirname : joinpath(dirname,subdirs)
-    x0       = getfield.(C.points,:x0) |> x-> ºjoin(skipmissing(x),"_")
+    x0       = getfield.(C.points,:x0) |> x-> join(skipmissing(x),"_")
     kappa    = getfield.(C.propagators,:k) |> x-> join(x,"_")
     mu       = getfield.(C.propagators,:mu) |> x-> join(x,"_")
     theta1   = join(C.propagators[1].theta,"_")
