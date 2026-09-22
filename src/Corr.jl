@@ -291,7 +291,10 @@ mutable struct CorrHeader
         a.dsize = 16 - 8* a.is_real
         return a
     end
-    CorrHeader() = new()
+    CorrHeader() = new((0.,0.,), (0.,0.), (0.,0.,), [[0.,0]],
+                       ntuple(x->Smearing(QuarkSmearing.None),2),
+                       ntuple(x->Smearing(GluonicSmearing.None),2),
+                       ntuple(x->None,2), 0,false,0,0)
 end
 
 function Base.:(==)(A::CorrHeader, B::CorrHeader)
@@ -401,13 +404,13 @@ end
 
 
 Base.length(p::Point) = 1
-Base.reverse(p::Point) = 1
-Base.iterate(p::Point,state=1) = state=1 ? (p,2) : nothing
+Base.reverse(p::Point) = p
+Base.iterate(p::Point,state=1) = state==1 ? (p,2) : nothing
 
 Base.length(p::Propagator) = 1
-Base.reverse(p::Propagator) = 1
-Base.iterate(p::Propagator,state=1) = state=1 ? (p,2) : nothing
+Base.reverse(p::Propagator) = p
+Base.iterate(p::Propagator,state=1) = state==1 ? (p,2) : nothing
 
 Base.length(p::Corr) = 1
-Base.reverse(p::Corr) = 1
-Base.iterate(p::Corr,state=1) = state=1 ? (p,2) : nothing
+Base.reverse(p::Corr) = p
+Base.iterate(p::Corr,state=1) = state==1 ? (p,2) : nothing
