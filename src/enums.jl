@@ -39,6 +39,7 @@ List of Quark Smearing supported
     Wuppertal
     GradientFlow3D
     GradientFlow
+    Gaussian
     None
 end
 
