@@ -398,3 +398,16 @@ function Base.show(io::IO,p::Propagator)
     println(io, "source: \n", p.src)
     println(io, "sink: \n", p.snk)
 end
+
+
+Base.length(p::Point) = 1
+Base.reverse(p::Point) = 1
+Base.iterate(p::Point,state=1) = state=1 ? (p,2) : nothing
+
+Base.length(p::Propagator) = 1
+Base.reverse(p::Propagator) = 1
+Base.iterate(p::Propagator,state=1) = state=1 ? (p,2) : nothing
+
+Base.length(p::Corr) = 1
+Base.reverse(p::Corr) = 1
+Base.iterate(p::Corr,state=1) = state=1 ? (p,2) : nothing
