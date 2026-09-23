@@ -50,40 +50,21 @@ function write_corr(path,C::Corr{N,BC,T};comment = "",override::Bool=false) wher
     ALPHAdobs_close(file)
 end
 
-function write_corr(C::Corr{2,BC,T}; folder=".",ens="ens",set=nothing,subdirs=nothing,comment="",override::Bool = false ,info=false) where {BC<:AbstractBC,T}
-    dirname = joinpath(folder,ens)
-    dirname = isnothing(set) ? dirname : joinpath(dirname,set)
-    dirname = joinpath(dirname,"2pt")
-    gamma = getfield.(C.points,:gamma) |> x -> join(x,"_")
-    dirname = joinpath(dirname,gamma)
-    dirname =   isnothing(subdirs) ? dirname : joinpath(dirname,subdirs)
-     x0 = getfield.(C.points,:x0) |> x-> join(skipmissing(x),"_")
-    kappa = getfield.(C.propagators,:k) |> x-> join(x,"_")
-    mu = getfield.(C.propagators,:mu) |> x-> join(x,"_")
-    theta1 = join(C.propagators[1].theta,"_")
-    theta2 = join(C.propagators[2].theta,"_")
-
-    filename = string(ens,"_x0_",x0,"_",gamma,"_kappa_",kappa,"_mu_",mu,"_theta1_",theta1,
-                      "_theta2_",theta2,".bdio")
-    info && println(joinpath(dirname,filename))
-    write_corr(joinpath(dirname,filename), C,comment=comment, override=override)
-end
-
-function write_corr(C::Corr{3,BC,T};folder=".",ens="ens",set=nothing,subdirs=nothing,comment="",override::Bool = false, info=false ) where {BC <:AbstractBC, T}
+function write_corr(C::Corr{N,BC,T};folder=".",ens="ens",set=nothing,subdirs=nothing,comment="",override::Bool = false, info=false ) where {N,BC <:AbstractBC, T}
+    is_default_src(x::Missing)::Bool = true
+    is_default_src(x::Int64)::Bool = x ==-1
+    _convert_to_str(x)::Vector{String} = String[is_default_src(_x) ? "r" : string(_x) for _x in x]
     dirname  = joinpath(folder,ens)
     dirname  = isnothing(set) ? dirname : joinpath(dirname,set)
-    dirname  = joinpath(dirname,"3pt")
+    dirname  = joinpath(dirname,"$(N)pt")
     gamma    = getfield.(C.points,:gamma) |> x -> join(x,"_")
     dirname  = joinpath(dirname,gamma)
     dirname  = isnothing(subdirs) ? dirname : joinpath(dirname,subdirs)
-    x0       = getfield.(C.points,:x0) |> x-> join(skipmissing(x),"_")
+    x0       = getfield.(C.points,:x0) |> x-> join(_convert_to_str(x),"_")
     kappa    = getfield.(C.propagators,:k) |> x-> join(x,"_")
     mu       = getfield.(C.propagators,:mu) |> x-> join(x,"_")
-    theta1   = join(C.propagators[1].theta,"_")
-    theta2   = join(C.propagators[2].theta,"_")
-    theta3   = join(C.propagators[3].theta,"_")
-    filename = string(ens,"_x0_",x0,"_",gamma,"_kappa_",kappa,"_mu_",mu,"_theta1_",theta1,
-                      "_theta2_",theta2,"_theta3_",theta3,".bdio")
-    info &&println(joinpath(dirname,filename))
+    thetas   = [string("_theta",n,"_",join(C.propagators[n].theta,"_")) for n in 1:N]
+    filename = string(ens,"_x0_",x0,"_",gamma,"_kappa_",kappa,"_mu_",mu,thetas...,".bdio")
+    info && println(joinpath(dirname,filename))
     write_corr(joinpath(dirname,filename), C,comment=comment, override=override)
 end
