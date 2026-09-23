@@ -1,6 +1,6 @@
 point_to_dict(p::Point{<:Integer}) =  Dict(
     "gamma"     => string(p.gamma),
-    "x0"        => string(p.x0),
+    "x0"        => p.x0 == -1 ? "moving" : string(p.x0),
     "qsmearing" => string(p.qsmearing),
     "gsmearing" => string(p.gsmearing)
 )
