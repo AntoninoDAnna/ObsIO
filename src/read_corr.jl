@@ -1,6 +1,9 @@
 struct NoMatchingFileError <:Exception
-    folder::String
     message::String
+end
+
+function Base.showerror(io::IO,e::NoMatchingFileError)
+    print("NoMatchingFileError: ", e.message)
 end
 
 to_int(x::Int64) = x
@@ -36,9 +39,9 @@ function make_filter(;filters...)
 end
 
 
-nofile_found(dirname;filters...) =  throw(NoMatchingFileError(dirname,string("No file found in", dirname, "that fulfills the requirements: ", join(["$k => $v" for (k,v) in filters], "; "))))
+nofile_found(dirname;filters...) =  throw(NoMatchingFileError(string("No file found in ", dirname, " that fulfills the requirements: ", join(["$k => $v" for (k,v) in filters], "; "))))
 
-empty_folder(dirname) = throw(NoMatchingFileError(dirname),string("Folder", dirname, "is empty"))
+empty_folder(dirname) = throw(NoMatchingFileError(string("Folder ", dirname, " is empty")))
 
 function __find_corr_file(ens::String; rootdir::String,
                           subdir::String = "",
