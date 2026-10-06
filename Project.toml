@@ -11,7 +11,7 @@ EnumClasses = "53ae640c-c67a-4d53-9dcb-4c921c67b7cd"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 
 [compat]
-ADerrors = "0.1.0"
+ADerrors = "0.1.0 - 1"
 ALPHAio = "0.4.0"
 BDIO = "0.1.0"
 EnumClasses = "0.1.0"
