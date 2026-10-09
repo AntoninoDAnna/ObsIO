@@ -20,10 +20,10 @@ function read_propagator(file)
     kappa, mu = 0.0, 0.0
     pF = ntuple(x->0.0,Val(4))
     theta = ntuple(x->0.0,Val(3))
-    seq_prop = false
+    seq_prop = -1
     seq_type = None
-    seq_x0 = -1
-    flag::UInt8 = 0x0
+    seq_x0 = missing
+    # flag::UInt8 = 0x0
     while true
         line = readline(file)
         (line == "") && break
@@ -34,13 +34,13 @@ function read_propagator(file)
         line=="" && continue;
         if contains(line,"kappa")
             kappa = extract_first(r"[+-]?([0-9]*[.])?[0-9]+",line,Float64)
-            flag |= 0x1
+            # flag |= 0x1
         elseif contains(line,"mus")
             mu =  extract_first(r"[+-]?([0-9]*[.])?[0-9]+",line,Float64)
-            flag |= 0x2
+            # flag |= 0x2
         elseif contains(line,"theta")
             theta = extract_all(r"[+-]?([0-9]*[.])?[0-9]+",line,Float64)
-            flag |= 0x04
+            # flag |= 0x04
         elseif contains(line,"seq_prop")
             seq_prop=extract_first(r"[0-9]+",line,Int64)
         elseif contains(line, "seq_type")
@@ -55,26 +55,18 @@ function read_propagator(file)
     end
     src  = Point(seq_type,seq_x0,QuarkSmearing.Local,GluonicSmearing.Local)
     snk  = Point(None,missing, QuarkSmearing.Local,GluonicSmearing.Local)
-    prop = Propagator(kappa,mu,theta,pF,src,snk,seq_prop)
-    return prop
+    prop = Propagator(kappa,mu,theta,pF,src,snk,seq_prop!=-1)
+    return prop, seq_prop+1
 end
 
-function resolve_seq_prop(p1::Propagator,p2::Propagator,
-                          props::Vector{Propagator})
-    res_props = (p1,p2)
-    if isa(p1.seq_prop, Int64)
-        idx = p1.seq_prop +1
-        __update__(p1,seq_prop = true)
-        seq_props = resolve_seq_prop(props[idx],p2,props)
-        res_props = (p1,seq_prop...)
-    elseif isa(p2.seq_prop,Int64)
-        idx = p2.seq_prop +1
-        __update__(p2,seq_prop = true)
-        seq_prop = resolve_seq_prop(p1,props[idx],props)
-        res_props = (seq_prop...,p2)
-    end
-        return res_props
+function __find_prop(pdx::Int64,props::Vector{Propagator},prop_maps::Vector{Int64})
+    props[pdx].seq_prop && return (props[pdx], __find_prop(prop_maps[pdx],props,prop_maps)...)
+    return props[pdx]
 end
+
+resolve_seq_prop(p1::Int64,p2::Int64,props::Vector{Propagator}, prop_maps::Vector{Int64}) =
+   (__find_prop(p1,props,prop_maps)..., __find_prop(p2,props,prop_maps)...)
+
 
 function update_propagators_tuple(props::NTuple{2,Propagator},
                                   x0, types,qsmear,gsmear)
@@ -103,7 +95,7 @@ function update_propagators_tuple(props::NTuple{3,Propagator},
 end
 
 
-function read_correlator(file,props,bc)
+function read_correlator(file,props,props_map,bc)
     iprop = (0.,0.)
     type = nothing
     gsmear = (0,0)
@@ -132,7 +124,7 @@ function read_correlator(file,props,bc)
             x0 = extract_first(r"(?<=\s)[0-9]+",line,Int64)
         end
     end
-    props = resolve_seq_prop(props[iprop[1]],props[iprop[2]],props)
+    props = resolve_seq_prop(iprop[1],iprop[2],props, props_map)
     props = update_propagators_tuple(props, x0,type,qsmear,gsmear)
     return Corr([],props,bc)
 end
@@ -167,24 +159,24 @@ function read_bc(file)
 end
 
 
-function read_input_file(path)
+function read_input_file(path; props = Vector{Propagator}(), corrs = Vector{Corr}())
     file = open(path,"r")
-    props =nothing;
-    corrs =nothing;
-    bc = nothing;
+    bc = nothing
+    props_map = nothing
     while !eof(file)
         head = match(r"(?<=\[)([^\]]+)",readline(file))
         isnothing(head) && continue;
         if contains(head.match,"Measurements")
             nprop,ncorr = read_measurements(file)
-            props = Vector{Propagator}(undef, nprop)
-            corrs = Vector{Corr}(undef,ncorr)
+            resize!(props, nprop)
+            props_map = fill(-1, nprop)
+            resize!(corrs, ncorr)
         elseif contains(head.match, "Boundary conditions")
             bc = read_bc(file)
         elseif contains(head.match,"Propagator")
             idx = match(r"[0-9]+",head.match) |> x->parse(Int64,x.match) + 1
             if idx <=length(props)
-                props[idx] = read_propagator(file)
+                props[idx], props_map[idx] = read_propagator(file)
             else
                 @warn "In input file there are more propagators that expected"
                 push!(props[idx],read_propagator(file))
@@ -192,10 +184,10 @@ function read_input_file(path)
         elseif contains(head.match,"Correlator")
             idx = match(r"[0-9]+",head.match)|> x->parse(Int64,x.match) + 1
             if idx <=length(corrs)
-                corrs[idx] = read_correlator(file,props,bc)
+                corrs[idx] = read_correlator(file,props,props_map,bc)
             else
                 @warn "In input file there are more correlators that expected"
-                push!(corrs,read_correlator(file,props))
+                push!(corrs,read_correlator(file,props,props_map,bc))
             end
         end
     end
